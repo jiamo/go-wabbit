@@ -1,0 +1,12 @@
+dist
+simple_server
+*.log
+*.pid
+main
+monkey
+.idea
+service_scan
+c2go
+*.c
+service_scan_output
+tmp.go
