@@ -1,0 +1,9 @@
+/* 11_term.wb
+
+   Different terms in expressions */
+
+print 1*2;
+print x*y;
+print 1/2;
+print x/y;
+print 1*2/x*y;

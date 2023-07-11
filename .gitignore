@@ -10,3 +10,4 @@ c2go
 *.c
 service_scan_output
 tmp.go
+tokenize_main
