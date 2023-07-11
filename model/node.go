@@ -1,4 +1,4 @@
-package wabbit_go
+package model
 
 type Node struct {
 	Id     int

@@ -3,7 +3,7 @@ simple_server
 *.log
 *.pid
 main
-monkey
+wabbit-go
 .idea
 service_scan
 c2go
