@@ -2,21 +2,35 @@ package tests
 
 import (
 	"github.com/stretchr/testify/assert"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"wabbit-go/tokenize" // Update this import path
 )
 
-var rightProgramPath = filepath.Join(filepath.Dir(os.Args[0]), "Programs")
-var wrongProgramPath = filepath.Join(filepath.Dir(os.Args[0]), "ErrorLex")
+var rightProgramPath string
+var wrongProgramPath string
 
-func testRightProgram(t *testing.T) {
+func init() {
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+	rightProgramPath = filepath.Join(wd, "Programs")
+	wrongProgramPath = filepath.Join(wd, "ErrorLex")
+}
+
+func TestRightProgram(t *testing.T) {
+	t.Log(rightProgramPath + "/*.wb")
 	rightFiles, _ := filepath.Glob(rightProgramPath + "/*.wb")
-
+	t.Log("files:", rightFiles)
 	for _, rightFile := range rightFiles {
-		_, err := tokenize.HandleFile(rightFile) // Make sure Main function exists in your tokenize package
+		t.Log("handing ", rightFile)
+		tokens, err := tokenize.HandleFile(rightFile) // Make sure Main function exists in your tokenize package
+
 		if err != nil {
+			t.Log(tokens)
 			t.Errorf(err.Error())
 		}
 	}

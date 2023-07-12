@@ -11,3 +11,4 @@ c2go
 service_scan_output
 tmp.go
 tokenize_main
+.go-version
