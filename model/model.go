@@ -45,11 +45,28 @@ func NewNodeInfo(args map[string]int) *NodeInfo {
 
 type Boolean interface {
 	Node
+	Bool() bool
 }
+
+type TrueBool struct {
+}
+
+func (n *TrueBool) Bool()   {}
+func (n *TrueBool) Id() int { return 0 }
+
+type FalseBool struct {
+}
+
+func (n *FalseBool) Bool()   {}
+func (n *FalseBool) Id() int { return 0 }
 
 type NameBool struct {
 	Name string
 }
+
+func (n *NameBool) ExpressionNode() {}
+func (n *NameBool) Bool()           {}
+func (n *NameBool) Id() int         { return 0 }
 
 type Float struct {
 	Value string
@@ -158,6 +175,54 @@ type Div struct {
 func (n *Div) ExpressionNode() {}
 func (n *Div) Id() int         { return 0 }
 
+type Lt struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *Lt) ExpressionNode() {}
+func (n *Lt) Id() int         { return 0 }
+
+type Le struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *Le) ExpressionNode() {}
+func (n *Le) Id() int         { return 0 }
+
+type Gt struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *Gt) ExpressionNode() {}
+func (n *Gt) Id() int         { return 0 }
+
+type Ge struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *Ge) ExpressionNode() {}
+func (n *Ge) Id() int         { return 0 }
+
+type Eq struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *Eq) ExpressionNode() {}
+func (n *Eq) Id() int         { return 0 }
+
+type Ne struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *Ne) ExpressionNode() {}
+func (n *Ne) Id() int         { return 0 }
+
 type RelOp struct {
 	Left  Expression
 	Right Expression
@@ -168,6 +233,22 @@ type LogicalOp struct {
 	Left  Expression
 	Right Expression
 }
+
+type LogOr struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *LogOr) ExpressionNode() {}
+func (n *LogOr) Id() int         { return 0 }
+
+type LogAnd struct {
+	Left  Expression
+	Right Expression
+}
+
+func (n *LogAnd) ExpressionNode() {}
+func (n *LogAnd) Id() int         { return 0 }
 
 type CompareExp struct {
 	Left   Expression
@@ -216,11 +297,11 @@ type Grouping struct {
 	Expression Expression
 }
 
+func (g *Grouping) Id() int         { return 0 }
+func (g *Grouping) ExpressionNode() {}
+
 type Declaration struct {
 }
-
-// type is type
-// if have field it should be declare
 
 type ConstDeclaration struct {
 	Name  Name
@@ -260,6 +341,9 @@ type IfStatement struct {
 	Consequence Statements
 	Alternative *Statements
 }
+
+func (n *IfStatement) StatementNode() {}
+func (n *IfStatement) Id() int        { return 0 }
 
 type WhileStatement struct {
 	Test Expression
@@ -316,6 +400,8 @@ func NodeAsSource(node Node, context *Context) string {
 		return v.Text
 	case *NameType:
 		return v.Name
+	case *NameBool:
+		return v.Name
 	case *FloatType:
 		return "float"
 	case *BinOpWithOp:
@@ -338,6 +424,40 @@ func NodeAsSource(node Node, context *Context) string {
 		return fmt.Sprintf(" %s %s %s",
 			NodeAsSource(v.Left, context), "/",
 			NodeAsSource(v.Right, context))
+	case *Lt:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), "<",
+			NodeAsSource(v.Right, context))
+	case *Le:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), "<=",
+			NodeAsSource(v.Right, context))
+	case *Gt:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), ">",
+			NodeAsSource(v.Right, context))
+	case *Ge:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), ">=",
+			NodeAsSource(v.Right, context))
+	case *Eq:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), "==",
+			NodeAsSource(v.Right, context))
+	case *Ne:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), "!=",
+			NodeAsSource(v.Right, context))
+	case *LogOr:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), "or",
+			NodeAsSource(v.Right, context))
+	case *LogAnd:
+		return fmt.Sprintf(" %s %s %s",
+			NodeAsSource(v.Left, context), "and",
+			NodeAsSource(v.Right, context))
+	case *Grouping:
+		return fmt.Sprintf("(%s)", NodeAsSource(v.Expression, context))
 	case *ConstDeclaration:
 		if v.Type == nil {
 			return fmt.Sprintf("%sconst %s = %s;",
@@ -377,8 +497,21 @@ func NodeAsSource(node Node, context *Context) string {
 	case *Statements:
 		var ts []string
 		for _, s := range v.Statements {
-			ts = append(ts, NodeAsSource(s, context))
+			ts = append(ts, fmt.Sprintf("%s%s", indent_str, NodeAsSource(s, context)))
 		}
+		return strings.Join(ts, "\n")
+	case *IfStatement:
+		var ts []string
+		ts = append(ts, fmt.Sprintf("if %s {", NodeAsSource(v.Test, context)))
+		ts = append(ts, fmt.Sprintf("%s", NodeAsSource(&v.Consequence, context.NewBlock())))
+
+		if v.Alternative != nil {
+			ts = append(ts, "} else {")
+			ts = append(ts, fmt.Sprintf("%s", NodeAsSource(v.Alternative, context.NewBlock())))
+		} else {
+
+		}
+		ts = append(ts, "}")
 		return strings.Join(ts, "\n")
 	default:
 		panic(fmt.Sprintf("Can't convert %v to source", v))
