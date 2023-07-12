@@ -68,7 +68,7 @@ func Tokenize(text string) ([]Token, error) {
 				n = size
 				continue
 			} else {
-				lineno += strings.Count(text[n:end], "\n")
+				lineno += strings.Count(text[n:n+end], "\n")
 				n = n + end + 2
 				continue
 			}
@@ -118,9 +118,10 @@ func Tokenize(text string) ([]Token, error) {
 			}
 			if n >= size {
 				error_array = append(error_array, fmt.Sprintf("on line %d: Unterminated character constant", lineno))
+			} else {
+				tokens = append(tokens, Token{Type: "CHAR", Value: text[start : n+1], Lineno: lineno, Index: start})
+				n++
 			}
-			tokens = append(tokens, Token{Type: "CHAR", Value: text[start : n+1], Lineno: lineno, Index: start})
-			n++
 			continue
 		} else if n+1 < size && literals[text[n:n+2]] != "" {
 			tokens = append(tokens, Token{Type: literals[text[n:n+2]], Value: text[n : n+2], Lineno: lineno, Index: n})

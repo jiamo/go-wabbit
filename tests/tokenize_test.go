@@ -24,7 +24,7 @@ func init() {
 func TestRightProgram(t *testing.T) {
 	t.Log(rightProgramPath + "/*.wb")
 	rightFiles, _ := filepath.Glob(rightProgramPath + "/*.wb")
-	t.Log("files:", rightFiles)
+	//t.Log("files:", rightFiles)
 	for _, rightFile := range rightFiles {
 		t.Log("handing ", rightFile)
 		tokens, err := tokenize.HandleFile(rightFile) // Make sure Main function exists in your tokenize package
@@ -36,9 +36,10 @@ func TestRightProgram(t *testing.T) {
 	}
 }
 
-func testErrorProgram(t *testing.T) {
+func TestErrorProgram(t *testing.T) {
 	wrongFiles, _ := filepath.Glob(wrongProgramPath + "/*.wb")
 	for _, file := range wrongFiles {
+		t.Log("handing ", file)
 		_, err := tokenize.HandleFile(file)
 		if err == nil {
 			t.Errorf("should failed but not failed")
@@ -46,7 +47,7 @@ func testErrorProgram(t *testing.T) {
 	}
 }
 
-func testSymbols(t *testing.T) {
+func TestSymbols(t *testing.T) {
 	tokens, err := tokenize.Tokenize("+ - * / < > <= >= == != = && || , ; ( ) { } !") // Make sure Tokenize function exists in your tokenize package
 	if err != nil {
 		t.Errorf(err.Error())
@@ -61,7 +62,7 @@ func testSymbols(t *testing.T) {
 	assert.Equal(t, expected, tokTypes)
 }
 
-func testNumbers(t *testing.T) {
+func TestNumbers(t *testing.T) {
 	tokens, err := tokenize.Tokenize("123 123.45") // Make sure Tokenize function exists in your tokenize package
 	if err != nil {
 		t.Errorf(err.Error())
@@ -80,7 +81,7 @@ func testNumbers(t *testing.T) {
 	assert.Equal(t, expectedValues, tokValues)
 }
 
-func testKeywords(t *testing.T) {
+func TestKeywords(t *testing.T) {
 	tokens, err := tokenize.Tokenize("if else while var const break continue print func return true false") // Make sure Tokenize function exists in your tokenize package
 	if err != nil {
 		t.Errorf(err.Error())
