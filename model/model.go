@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -76,7 +77,7 @@ func (n *Float) ExpressionNode() {}
 func (n *Float) Id() int         { return 0 }
 
 type Integer struct {
-	Value string
+	Value int
 }
 
 func (n *Integer) ExpressionNode() {}
@@ -97,6 +98,9 @@ func (n *NameType) Type() string { return "" }
 
 type IntegerType struct {
 }
+
+func (n *IntegerType) Id() int      { return 0 }
+func (n *IntegerType) Type() string { return "" }
 
 type FloatType struct {
 }
@@ -350,11 +354,20 @@ type WhileStatement struct {
 	Body Statements
 }
 
+func (n *WhileStatement) StatementNode() {}
+func (n *WhileStatement) Id() int        { return 0 }
+
 type BreakStatement struct {
 }
 
+func (n *BreakStatement) StatementNode() {}
+func (n *BreakStatement) Id() int        { return 0 }
+
 type ContinueStatement struct {
 }
+
+func (n *ContinueStatement) StatementNode() {}
+func (n *ContinueStatement) Id() int        { return 0 }
 
 type FunctionDeclaration struct {
 	Name       Name
@@ -393,7 +406,7 @@ func NodeAsSource(node Node, context *Context) string {
 	indent_str := context.Indent
 	switch v := node.(type) {
 	case *Integer:
-		return v.Value
+		return strconv.Itoa(v.Value)
 	case *Float:
 		return v.Value
 	case *Name:
@@ -402,6 +415,8 @@ func NodeAsSource(node Node, context *Context) string {
 		return v.Name
 	case *NameBool:
 		return v.Name
+	case *IntegerType:
+		return "int"
 	case *FloatType:
 		return "float"
 	case *BinOpWithOp:
@@ -409,51 +424,55 @@ func NodeAsSource(node Node, context *Context) string {
 			NodeAsSource(v.Left, context), v.Op,
 			NodeAsSource(v.Right, context))
 	case *Add:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "+",
 			NodeAsSource(v.Right, context))
 	case *Sub:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "-",
 			NodeAsSource(v.Right, context))
 	case *Mul:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "*",
 			NodeAsSource(v.Right, context))
 	case *Div:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "/",
 			NodeAsSource(v.Right, context))
 	case *Lt:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "<",
 			NodeAsSource(v.Right, context))
 	case *Le:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "<=",
 			NodeAsSource(v.Right, context))
 	case *Gt:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), ">",
 			NodeAsSource(v.Right, context))
 	case *Ge:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), ">=",
 			NodeAsSource(v.Right, context))
 	case *Eq:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "==",
 			NodeAsSource(v.Right, context))
 	case *Ne:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "!=",
 			NodeAsSource(v.Right, context))
+	case *Neg:
+		return fmt.Sprintf("-%s",
+			NodeAsSource(v.Operand, context))
+
 	case *LogOr:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "or",
 			NodeAsSource(v.Right, context))
 	case *LogAnd:
-		return fmt.Sprintf(" %s %s %s",
+		return fmt.Sprintf("%s %s %s",
 			NodeAsSource(v.Left, context), "and",
 			NodeAsSource(v.Right, context))
 	case *Grouping:
@@ -500,17 +519,27 @@ func NodeAsSource(node Node, context *Context) string {
 			ts = append(ts, fmt.Sprintf("%s%s", indent_str, NodeAsSource(s, context)))
 		}
 		return strings.Join(ts, "\n")
+	case *BreakStatement:
+		return "break;"
+	case *ContinueStatement:
+		return "continue;"
 	case *IfStatement:
 		var ts []string
 		ts = append(ts, fmt.Sprintf("if %s {", NodeAsSource(v.Test, context)))
 		ts = append(ts, fmt.Sprintf("%s", NodeAsSource(&v.Consequence, context.NewBlock())))
 
 		if v.Alternative != nil {
-			ts = append(ts, "} else {")
+			ts = append(ts, fmt.Sprintf("%s} else {", context.Indent))
 			ts = append(ts, fmt.Sprintf("%s", NodeAsSource(v.Alternative, context.NewBlock())))
 		} else {
 
 		}
+		ts = append(ts, fmt.Sprintf("%s}", context.Indent))
+		return strings.Join(ts, "\n")
+	case *WhileStatement:
+		var ts []string
+		ts = append(ts, fmt.Sprintf("while %s {", NodeAsSource(v.Test, context)))
+		ts = append(ts, NodeAsSource(&v.Body, context.NewBlock()))
 		ts = append(ts, "}")
 		return strings.Join(ts, "\n")
 	default:
