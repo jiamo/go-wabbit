@@ -288,7 +288,8 @@ type CompoundExpression struct {
 	Statements []Statement
 }
 
-func (n *CompoundExpression) Id() int { return 0 }
+func (n *CompoundExpression) ExpressionNode() {}
+func (n *CompoundExpression) Id() int         { return 0 }
 
 type ExpressionAsStatement struct {
 	Expression Expression
@@ -304,7 +305,8 @@ type Grouping struct {
 func (g *Grouping) Id() int         { return 0 }
 func (g *Grouping) ExpressionNode() {}
 
-type Declaration struct {
+type Declaration interface {
+	Statement
 }
 
 type ConstDeclaration struct {
@@ -376,19 +378,30 @@ type FunctionDeclaration struct {
 	Body       Statements
 }
 
+func (n *FunctionDeclaration) StatementNode() {}
+func (n *FunctionDeclaration) Id() int        { return 0 }
+
 type FunctionApplication struct {
 	Func      Expression
 	Arguments []Expression
 }
 
+func (n *FunctionApplication) ExpressionNode() {}
+func (n *FunctionApplication) Id() int         { return 0 }
+
 type ReturnStatement struct {
 	Value Expression
 }
+
+func (n *ReturnStatement) StatementNode() {}
+func (n *ReturnStatement) Id() int        { return 0 }
 
 type Parameter struct {
 	Name Name
 	Type Type
 }
+
+func (n *Parameter) Id() int { return 0 }
 
 type Context struct {
 	Indent string
@@ -488,6 +501,12 @@ func NodeAsSource(node Node, context *Context) string {
 				NodeAsSource(v.Type, context),
 				NodeAsSource(v.Value, context))
 		}
+	case *FunctionApplication:
+		var ts []string
+		for _, p := range v.Arguments {
+			ts = append(ts, fmt.Sprintf("%s", NodeAsSource(p, context)))
+		}
+		return fmt.Sprintf("%s(%s)", NodeAsSource(v.Func, context), strings.Join(ts, " "))
 	case *VarDeclaration:
 		if v.Value != nil {
 			if v.Type == nil {
@@ -505,6 +524,12 @@ func NodeAsSource(node Node, context *Context) string {
 				indent_str, NodeAsSource(&v.Name, context),
 				NodeAsSource(v.Type, context))
 		}
+	case *CompoundExpression:
+		var ts []string
+		for _, s := range v.Statements {
+			ts = append(ts, fmt.Sprintf("%s%s", indent_str, NodeAsSource(s, context)))
+		}
+		return fmt.Sprintf("{ %s }", strings.Join(ts, " "))
 	case *Assignment: // Assignment is exp not statement
 		return fmt.Sprintf("%s = %s",
 			NodeAsSource(v.Location, context),
@@ -542,7 +567,19 @@ func NodeAsSource(node Node, context *Context) string {
 		ts = append(ts, NodeAsSource(&v.Body, context.NewBlock()))
 		ts = append(ts, "}")
 		return strings.Join(ts, "\n")
+	case *ReturnStatement:
+		return fmt.Sprintf("return %s;", NodeAsSource(v.Value, context))
+	case *FunctionDeclaration:
+		var ts []string
+		for _, p := range v.Parameters {
+			ts = append(ts, fmt.Sprintf("%s %s", NodeAsSource(&p.Name, context), NodeAsSource(p.Type, context)))
+		}
+
+		return fmt.Sprintf("func %s(%s) %s{\n%s\n}",
+			NodeAsSource(&v.Name, context), strings.Join(ts, ", "), NodeAsSource(v.ReturnType, context),
+			NodeAsSource(&v.Body, context.NewBlock()))
 	default:
 		panic(fmt.Sprintf("Can't convert %v to source", v))
 	}
+
 }
