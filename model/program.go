@@ -35,6 +35,7 @@ func ProgramFromFile(filename string) (*Program, error) {
 }
 
 func (p *Program) RecordPosition(node Node, lineno, start, end int) {
+	// when calling Id it should in Map
 	p.Db[node.Id()] = NewLocator(p.Source, lineno, start, end)
 }
 

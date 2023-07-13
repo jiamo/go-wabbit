@@ -71,16 +71,18 @@ func (ts *TokenStream) Synchronize(types ...string) {
 	}
 }
 
-type nodeInitFunc func(args ...interface{}) model.Node
-type constructFunc func(nodeInitFunc, ...interface{}) model.Node
+// type nodeInitFunc func(args ...interface{}) model.Node
+// pass it back
+type constructFunc func(model.Node) model.Node
 
 func (ts *TokenStream) Builder() func(func(constructFunc) model.Node) {
 	startLine := ts.lookahead.Lineno
 	startIndex := ts.lookahead.Index
 
-	construct := func(nodeInit nodeInitFunc, args ...interface{}) model.Node {
+	construct := func(node model.Node) model.Node {
 		//print("nodetype=", nodetype)
-		node := nodeInit(args)
+		//node := nodeInit(args)
+		// we got node don't init any more
 		ts.program.RecordPosition(node, startLine, startIndex, ts.lastIndex) // ts.lookahead.index
 		return node
 	}
@@ -112,15 +114,18 @@ func ParseProgram(program *model.Program) error {
 		return err
 	}
 	program.Model = statements
+	return nil
 }
 
-func parseStatements(ts *TokenStream) []Node {
-	var stmts []Node
-	for !ts.Peek("}", EOF) {
-		stmt := parseStatement(ts)
-		stmts = append(stmts, stmt)
-	}
-	return ts.Builder().Build("Statements", stmts...)
+func parseStatements(ts *TokenStream) model.Node {
+	statements := []model.Statement{}
+	ts.Builder()(func(new constructFunc) model.Node {
+		for ts.Peek("RBRACE", "EOF") != nil {
+			statement := parseStatement(ts)
+			statements = append(statements, statement)
+		}
+		return new(&model.Statements{statements})
+	})
 }
 
 func parseStatement(ts *TokenStream) Node {

@@ -36,12 +36,51 @@ type Statement interface {
 
 var staticID = 0
 
-func NewNodeInfo(args map[string]int) *NodeInfo {
-	self := &NodeInfo{}
+//func NewNodeInfo(args map[string]int) *NodeInfo {
+//	self := &NodeInfo{}
+//	staticID++
+//	self.Id = staticID
+//	self.Indent += args["indent"]
+//	return self
+//}
+
+type NodeManager struct {
+	NodeMap map[Node]NodeInfo
+}
+
+var TheNodeManager NodeManager
+
+func init() {
+	// Ugly Now
+	TheNodeManager = NodeManager{
+		make(map[Node]NodeInfo),
+	}
+}
+
+func RegisterNode(node Node) {
 	staticID++
-	self.Id = staticID
-	self.Indent += args["indent"]
-	return self
+	n := NodeInfo{
+		Id: staticID,
+	}
+	TheNodeManager.NodeMap[node] = n
+}
+
+func GetNodeInfo(node Node) NodeInfo {
+	// if node in TheNodeManager return it
+	// else put it with create a nodeinfo
+	if _, ok := TheNodeManager.NodeMap[node]; ok {
+		// return it
+		return TheNodeManager.NodeMap[node]
+	} else {
+		// create a nodeinfo
+		// put it
+		staticID++
+		n := NodeInfo{
+			Id: staticID,
+		}
+		TheNodeManager.NodeMap[node] = n
+		return n
+	}
 }
 
 type Boolean interface {
@@ -53,13 +92,13 @@ type TrueBool struct {
 }
 
 func (n *TrueBool) Bool()   {}
-func (n *TrueBool) Id() int { return 0 }
+func (n *TrueBool) Id() int { return GetNodeInfo(n).Id }
 
 type FalseBool struct {
 }
 
 func (n *FalseBool) Bool()   {}
-func (n *FalseBool) Id() int { return 0 }
+func (n *FalseBool) Id() int { return GetNodeInfo(n).Id }
 
 type NameBool struct {
 	Name string
@@ -67,21 +106,21 @@ type NameBool struct {
 
 func (n *NameBool) ExpressionNode() {}
 func (n *NameBool) Bool()           {}
-func (n *NameBool) Id() int         { return 0 }
+func (n *NameBool) Id() int         { return GetNodeInfo(n).Id }
 
 type Float struct {
-	Value string
+	Value float64
 }
 
 func (n *Float) ExpressionNode() {}
-func (n *Float) Id() int         { return 0 }
+func (n *Float) Id() int         { return GetNodeInfo(n).Id }
 
 type Integer struct {
 	Value int
 }
 
 func (n *Integer) ExpressionNode() {}
-func (n *Integer) Id() int         { return 0 }
+func (n *Integer) Id() int         { return GetNodeInfo(n).Id }
 
 // Type should be interface ?
 type Type interface {
@@ -93,20 +132,20 @@ type NameType struct {
 	Name string
 }
 
-func (n *NameType) Id() int      { return 0 }
-func (n *NameType) Type() string { return "" }
+func (n *NameType) Id() int      { return GetNodeInfo(n).Id }
+func (n *NameType) Type() string { return n.Name }
 
 type IntegerType struct {
 }
 
-func (n *IntegerType) Id() int      { return 0 }
-func (n *IntegerType) Type() string { return "" }
+func (n *IntegerType) Id() int      { return GetNodeInfo(n).Id }
+func (n *IntegerType) Type() string { return "int" }
 
 type FloatType struct {
 }
 
-func (n *FloatType) Id() int      { return 0 }
-func (n *FloatType) Type() string { return "" }
+func (n *FloatType) Id() int      { return GetNodeInfo(n).Id }
+func (n *FloatType) Type() string { return "float" }
 
 type Op struct {
 	Value string
@@ -121,14 +160,14 @@ type Neg struct {
 }
 
 func (n *Neg) ExpressionNode() {}
-func (n *Neg) Id() int         { return 0 }
+func (n *Neg) Id() int         { return GetNodeInfo(n).Id }
 
 type Pos struct {
 	Operand Expression
 }
 
 func (n *Pos) ExpressionNode() {}
-func (n *Pos) Id() int         { return 0 }
+func (n *Pos) Id() int         { return GetNodeInfo(n).Id }
 
 type BinOpWithOp struct {
 	Op    string
@@ -137,7 +176,7 @@ type BinOpWithOp struct {
 }
 
 func (n *BinOpWithOp) ExpressionNode() {}
-func (n *BinOpWithOp) Id() int         { return 0 }
+func (n *BinOpWithOp) Id() int         { return GetNodeInfo(n).Id }
 
 type BinOp struct {
 	Left  Expression
@@ -145,7 +184,7 @@ type BinOp struct {
 }
 
 func (n *BinOp) ExpressionNode() {}
-func (n *BinOp) Id() int         { return 0 }
+func (n *BinOp) Id() int         { return GetNodeInfo(n).Id }
 
 type Add struct {
 	Left  Expression
@@ -153,7 +192,7 @@ type Add struct {
 }
 
 func (n *Add) ExpressionNode() {}
-func (n *Add) Id() int         { return 0 }
+func (n *Add) Id() int         { return GetNodeInfo(n).Id }
 
 type Sub struct {
 	Left  Expression
@@ -161,7 +200,7 @@ type Sub struct {
 }
 
 func (n *Sub) ExpressionNode() {}
-func (n *Sub) Id() int         { return 0 }
+func (n *Sub) Id() int         { return GetNodeInfo(n).Id }
 
 type Mul struct {
 	Left  Expression
@@ -169,7 +208,7 @@ type Mul struct {
 }
 
 func (n *Mul) ExpressionNode() {}
-func (n *Mul) Id() int         { return 0 }
+func (n *Mul) Id() int         { return GetNodeInfo(n).Id }
 
 type Div struct {
 	Left  Expression
@@ -177,7 +216,7 @@ type Div struct {
 }
 
 func (n *Div) ExpressionNode() {}
-func (n *Div) Id() int         { return 0 }
+func (n *Div) Id() int         { return GetNodeInfo(n).Id }
 
 type Lt struct {
 	Left  Expression
@@ -185,7 +224,7 @@ type Lt struct {
 }
 
 func (n *Lt) ExpressionNode() {}
-func (n *Lt) Id() int         { return 0 }
+func (n *Lt) Id() int         { return GetNodeInfo(n).Id }
 
 type Le struct {
 	Left  Expression
@@ -193,7 +232,7 @@ type Le struct {
 }
 
 func (n *Le) ExpressionNode() {}
-func (n *Le) Id() int         { return 0 }
+func (n *Le) Id() int         { return GetNodeInfo(n).Id }
 
 type Gt struct {
 	Left  Expression
@@ -201,7 +240,7 @@ type Gt struct {
 }
 
 func (n *Gt) ExpressionNode() {}
-func (n *Gt) Id() int         { return 0 }
+func (n *Gt) Id() int         { return GetNodeInfo(n).Id }
 
 type Ge struct {
 	Left  Expression
@@ -209,7 +248,7 @@ type Ge struct {
 }
 
 func (n *Ge) ExpressionNode() {}
-func (n *Ge) Id() int         { return 0 }
+func (n *Ge) Id() int         { return GetNodeInfo(n).Id }
 
 type Eq struct {
 	Left  Expression
@@ -217,7 +256,7 @@ type Eq struct {
 }
 
 func (n *Eq) ExpressionNode() {}
-func (n *Eq) Id() int         { return 0 }
+func (n *Eq) Id() int         { return GetNodeInfo(n).Id }
 
 type Ne struct {
 	Left  Expression
@@ -225,7 +264,7 @@ type Ne struct {
 }
 
 func (n *Ne) ExpressionNode() {}
-func (n *Ne) Id() int         { return 0 }
+func (n *Ne) Id() int         { return GetNodeInfo(n).Id }
 
 type RelOp struct {
 	Left  Expression
@@ -244,7 +283,7 @@ type LogOr struct {
 }
 
 func (n *LogOr) ExpressionNode() {}
-func (n *LogOr) Id() int         { return 0 }
+func (n *LogOr) Id() int         { return GetNodeInfo(n).Id }
 
 type LogAnd struct {
 	Left  Expression
@@ -252,7 +291,7 @@ type LogAnd struct {
 }
 
 func (n *LogAnd) ExpressionNode() {}
-func (n *LogAnd) Id() int         { return 0 }
+func (n *LogAnd) Id() int         { return GetNodeInfo(n).Id }
 
 type CompareExp struct {
 	Left   Expression
@@ -269,41 +308,41 @@ type PrintStatement struct {
 }
 
 func (n *PrintStatement) StatementNode() {}
-func (n *PrintStatement) Id() int        { return 0 }
+func (n *PrintStatement) Id() int        { return GetNodeInfo(n).Id }
 
 type Statements struct {
 	Statements []Statement
 }
 
-func (n *Statements) Id() int { return 0 }
+func (n *Statements) Id() int { return GetNodeInfo(n).Id }
 
 type Name struct {
 	Text string
 }
 
 func (n *Name) ExpressionNode() {}
-func (n *Name) Id() int         { return 0 }
+func (n *Name) Id() int         { return GetNodeInfo(n).Id }
 
 type CompoundExpression struct {
 	Statements []Statement
 }
 
 func (n *CompoundExpression) ExpressionNode() {}
-func (n *CompoundExpression) Id() int         { return 0 }
+func (n *CompoundExpression) Id() int         { return GetNodeInfo(n).Id }
 
 type ExpressionAsStatement struct {
 	Expression Expression
 }
 
 func (n *ExpressionAsStatement) StatementNode() {}
-func (n *ExpressionAsStatement) Id() int        { return 0 }
+func (n *ExpressionAsStatement) Id() int        { return GetNodeInfo(n).Id }
 
 type Grouping struct {
 	Expression Expression
 }
 
-func (g *Grouping) Id() int         { return 0 }
-func (g *Grouping) ExpressionNode() {}
+func (n *Grouping) Id() int         { return GetNodeInfo(n).Id }
+func (n *Grouping) ExpressionNode() {}
 
 type Declaration interface {
 	Statement
@@ -316,7 +355,7 @@ type ConstDeclaration struct {
 }
 
 func (n *ConstDeclaration) StatementNode() {}
-func (n *ConstDeclaration) Id() int        { return 0 }
+func (n *ConstDeclaration) Id() int        { return GetNodeInfo(n).Id }
 
 type VarDeclaration struct {
 	Name  Name
@@ -325,7 +364,7 @@ type VarDeclaration struct {
 }
 
 func (n *VarDeclaration) StatementNode() {}
-func (n *VarDeclaration) Id() int        { return 0 }
+func (n *VarDeclaration) Id() int        { return GetNodeInfo(n).Id }
 
 type Assignment struct {
 	Location Expression
@@ -333,14 +372,14 @@ type Assignment struct {
 }
 
 func (n *Assignment) ExpressionNode() {}
-func (n *Assignment) Id() int         { return 0 }
+func (n *Assignment) Id() int         { return GetNodeInfo(n).Id }
 
 type Character struct {
 	Value string
 }
 
 func (n *Character) ExpressionNode() {}
-func (n *Character) Id() int         { return 0 }
+func (n *Character) Id() int         { return GetNodeInfo(n).Id }
 
 type IfStatement struct {
 	Test        Expression
@@ -349,7 +388,7 @@ type IfStatement struct {
 }
 
 func (n *IfStatement) StatementNode() {}
-func (n *IfStatement) Id() int        { return 0 }
+func (n *IfStatement) Id() int        { return GetNodeInfo(n).Id }
 
 type WhileStatement struct {
 	Test Expression
@@ -357,19 +396,19 @@ type WhileStatement struct {
 }
 
 func (n *WhileStatement) StatementNode() {}
-func (n *WhileStatement) Id() int        { return 0 }
+func (n *WhileStatement) Id() int        { return GetNodeInfo(n).Id }
 
 type BreakStatement struct {
 }
 
 func (n *BreakStatement) StatementNode() {}
-func (n *BreakStatement) Id() int        { return 0 }
+func (n *BreakStatement) Id() int        { return GetNodeInfo(n).Id }
 
 type ContinueStatement struct {
 }
 
 func (n *ContinueStatement) StatementNode() {}
-func (n *ContinueStatement) Id() int        { return 0 }
+func (n *ContinueStatement) Id() int        { return GetNodeInfo(n).Id }
 
 type FunctionDeclaration struct {
 	Name       Name
@@ -379,7 +418,7 @@ type FunctionDeclaration struct {
 }
 
 func (n *FunctionDeclaration) StatementNode() {}
-func (n *FunctionDeclaration) Id() int        { return 0 }
+func (n *FunctionDeclaration) Id() int        { return GetNodeInfo(n).Id }
 
 type FunctionApplication struct {
 	Func      Expression
@@ -387,21 +426,21 @@ type FunctionApplication struct {
 }
 
 func (n *FunctionApplication) ExpressionNode() {}
-func (n *FunctionApplication) Id() int         { return 0 }
+func (n *FunctionApplication) Id() int         { return GetNodeInfo(n).Id }
 
 type ReturnStatement struct {
 	Value Expression
 }
 
 func (n *ReturnStatement) StatementNode() {}
-func (n *ReturnStatement) Id() int        { return 0 }
+func (n *ReturnStatement) Id() int        { return GetNodeInfo(n).Id }
 
 type Parameter struct {
 	Name Name
 	Type Type
 }
 
-func (n *Parameter) Id() int { return 0 }
+func (n *Parameter) Id() int { return GetNodeInfo(n).Id }
 
 type Context struct {
 	Indent string
@@ -421,7 +460,7 @@ func NodeAsSource(node Node, context *Context) string {
 	case *Integer:
 		return strconv.Itoa(v.Value)
 	case *Float:
-		return v.Value
+		return fmt.Sprintf("%v", v.Value)
 	case *Name:
 		return v.Text
 	case *NameType:
@@ -510,11 +549,11 @@ func NodeAsSource(node Node, context *Context) string {
 	case *VarDeclaration:
 		if v.Value != nil {
 			if v.Type == nil {
-				return fmt.Sprintf("%sconst %s = %s;",
+				return fmt.Sprintf("%svar %s = %s;",
 					indent_str, NodeAsSource(&v.Name, context),
 					NodeAsSource(v.Value, context))
 			} else {
-				return fmt.Sprintf("%sconst %s %s = %s;",
+				return fmt.Sprintf("%svar %s %s = %s;",
 					indent_str, NodeAsSource(&v.Name, context),
 					NodeAsSource(v.Type, context),
 					NodeAsSource(v.Value, context))
