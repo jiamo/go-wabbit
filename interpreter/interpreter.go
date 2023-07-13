@@ -17,6 +17,11 @@ type WabbitValue struct {
 	Value interface{}
 }
 
+type FunctionClosure struct {
+	Node    *model.FunctionDeclaration
+	Context *Context
+}
+
 func (w *WabbitValue) String() string {
 	return fmt.Sprintf("%v", w.Value)
 }
@@ -83,10 +88,10 @@ func InterpretProgram(program model.Node) interface{} {
 	context := NewContext(nil, 0)
 
 	// 在上下文环境中预定义基本类型
-	_ = context.Define("int", &WabbitValue{Type: "type", Value: "int"})
-	_ = context.Define("float", &WabbitValue{Type: "type", Value: "float"})
-	_ = context.Define("char", &WabbitValue{Type: "type", Value: "char"})
-	_ = context.Define("bool", &WabbitValue{Type: "type", Value: "bool"})
+	_ = context.Define("int", &WabbitValue{Type: "cast", Value: "int"})
+	_ = context.Define("float", &WabbitValue{Type: "cast", Value: "float"})
+	_ = context.Define("char", &WabbitValue{Type: "cast", Value: "char"})
+	_ = context.Define("bool", &WabbitValue{Type: "cast", Value: "bool"})
 
 	// 解释输入的程序模型，并返回解释结果
 	return InterpretNode(program, context)
@@ -223,11 +228,20 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 	case *model.PrintStatement:
 		fmt.Println(InterpretNode(v.Value, context))
 	case *model.Statements:
+
 		var result *WabbitValue
 		for _, statement := range v.Statements {
 			result = InterpretNode(statement, context)
+
+			// need check break return too
+			if result != nil {
+				if result.Type == "break" || result.Type == "return" || result.Type == "continue" {
+					return result
+				}
+			}
 		}
 		return result
+
 	case *model.ExpressionAsStatement:
 		InterpretNode(v.Expression, context)
 
@@ -240,6 +254,81 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return InterpretNode(&v.Consequence, context)
 		} else if v.Alternative != nil {
 			return InterpretNode(v.Alternative, context)
+		}
+
+	case *model.BreakStatement:
+		return &WabbitValue{"break", nil}
+	case *model.ContinueStatement:
+		return &WabbitValue{"continue", nil}
+	case *model.ReturnStatement:
+		value := InterpretNode(v.Value, context)
+		return &WabbitValue{"return", value}
+
+	case *model.WhileStatement:
+		for true {
+			condtion := InterpretNode(v.Test, context)
+			if condtion.Type == "error" { // fix it
+				return condtion
+			}
+			if condtion.Value.(bool) {
+				result := InterpretNode(&v.Body, context)
+				//fmt.Println("result %v", result)
+				if result == nil {
+					continue
+				}
+				if result.Type == "break" {
+					break
+				} else if result.Type == "continue" {
+					continue
+				} else if result.Type == "return" {
+					return result
+				}
+				continue
+			} else {
+
+				break
+			}
+		}
+	case *model.FunctionDeclaration:
+		// we should check the function name is not defined
+		context.Define(v.Name.Text, &WabbitValue{"func", &FunctionClosure{v, context}})
+
+	case *model.FunctionApplication:
+		value := InterpretNode(v.Func, context) // while lookup
+
+		//savedContext = funtionClosure.Value.Context
+		// TODO make it as builtin function...
+		if value.Type == "cast" { // this is conversion function
+			if value.Value == "int" {
+				result := InterpretNode(v.Arguments[0], context) // # type conversion must only have one args ?
+				if result.Type == "float" {
+					return &WabbitValue{"int", int(result.Value.(float64))}
+				}
+				return result
+			}
+		}
+		// custom function and it should be....
+		if value.Type == "func" {
+			funtionClosure := value.Value.(*FunctionClosure)
+			eval_context := funtionClosure.Context.NewBlock()
+			for i, arg := range v.Arguments {
+				// TODO check the type
+				//fmt.Println("arg %v", arg)
+				argValue := InterpretNode(arg, context) // arg eval in current context
+				eval_context.Define(
+					funtionClosure.Node.Parameters[i].Name.Text,
+					&WabbitValue{
+						funtionClosure.Node.Parameters[i].Type.Type(),
+						&WabbitVar{"var", argValue}})
+			}
+
+			bodyValue := InterpretNode(&funtionClosure.Node.Body, eval_context)
+			if bodyValue != nil {
+				if bodyValue.Type == "return" {
+					return bodyValue.Value.(*WabbitValue)
+				}
+				return bodyValue
+			}
 		}
 
 	default:

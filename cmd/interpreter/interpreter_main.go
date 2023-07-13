@@ -79,7 +79,7 @@ func main() {
 
 	p3 := &model.Statements{
 		[]model.Statement{
-			&model.VarDeclaration{model.Name{"n"}, &model.IntegerType{}, &model.Integer{'1'}},
+			&model.VarDeclaration{model.Name{"n"}, &model.IntegerType{}, &model.Integer{2}},
 			&model.WhileStatement{
 				&model.NameBool{"true"},
 				model.Statements{[]model.Statement{
@@ -101,6 +101,7 @@ func main() {
 			&model.PrintStatement{&model.Name{"n"}}},
 	}
 	println(model.NodeAsSource(p3, model.NewContext()))
+	interpreter.InterpretProgram(p3)
 
 	//p4 := &model.Statements{
 	//	[]model.Statement{
@@ -122,49 +123,49 @@ func main() {
 	//}
 	//println(model.NodeAsSource(p4, model.NewContext()))
 	//
-	//p5 := &model.Statements{
-	//	[]model.Statement{
-	//		&model.FunctionDeclaration{
-	//			Name: model.Name{"add"},
-	//			Parameters: []model.Parameter{
-	//				model.Parameter{
-	//					Name: model.Name{"x"},
-	//					Type: &model.IntegerType{},
-	//				},
-	//				model.Parameter{
-	//					Name: model.Name{"y"},
-	//					Type: &model.IntegerType{},
-	//				},
-	//			},
-	//			ReturnType: &model.IntegerType{},
-	//			Body: model.Statements{
-	//				[]model.Statement{
-	//					&model.ReturnStatement{
-	//						Value: &model.Add{
-	//							Left:  &model.Name{"x"},
-	//							Right: &model.Name{"y"},
-	//						},
-	//					},
-	//				},
-	//			},
-	//		},
-	//		&model.VarDeclaration{
-	//			Name: model.Name{"result"},
-	//			Type: nil,
-	//			Value: &model.FunctionApplication{
-	//				&model.Name{"add"},
-	//				[]model.Expression{
-	//					&model.Integer{2},
-	//					&model.Integer{3},
-	//				},
-	//			},
-	//		},
-	//		&model.PrintStatement{
-	//			Value: &model.Name{"result"},
-	//		},
-	//	},
-	//}
-	//
-	//println(model.NodeAsSource(p5, model.NewContext()))
+	p5 := &model.Statements{
+		[]model.Statement{
+			&model.FunctionDeclaration{
+				Name: model.Name{"add"},
+				Parameters: []model.Parameter{
+					model.Parameter{
+						Name: model.Name{"x"},
+						Type: &model.IntegerType{},
+					},
+					model.Parameter{
+						Name: model.Name{"y"},
+						Type: &model.IntegerType{},
+					},
+				},
+				ReturnType: &model.IntegerType{},
+				Body: model.Statements{
+					[]model.Statement{
+						&model.ReturnStatement{
+							Value: &model.Add{
+								Left:  &model.Name{"x"},
+								Right: &model.Name{"y"},
+							},
+						},
+					},
+				},
+			},
+			&model.VarDeclaration{
+				Name: model.Name{"result"},
+				Type: nil,
+				Value: &model.FunctionApplication{
+					&model.Name{"add"},
+					[]model.Expression{
+						&model.Integer{2},
+						&model.Integer{3},
+					},
+				},
+			},
+			&model.PrintStatement{
+				Value: &model.Name{"result"},
+			},
+		},
+	}
 
+	println(model.NodeAsSource(p5, model.NewContext()))
+	interpreter.InterpretProgram(p5)
 }
