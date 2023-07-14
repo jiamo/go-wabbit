@@ -193,6 +193,7 @@ func parsePrintStmt(ts *TokenStream) model.Statement {
 }
 
 func parseConstDecl(ts *TokenStream) model.Statement {
+	log.Debugf("parseConstDecl")
 	builder := ts.Builder()
 
 	node := builder(func(new constructFunc) model.Node {
@@ -206,7 +207,7 @@ func parseConstDecl(ts *TokenStream) model.Statement {
 		if tok := ts.Accept("ID"); tok != nil {
 			typ = &model.NameType{tok.Value}
 		}
-		ts.Expect("=")
+		ts.Expect("ASSIGN")
 		value := parseExpression(ts)
 		ts.Expect("SEMI")
 		return new(&model.ConstDeclaration{model.Name{name}, typ, value})
@@ -216,6 +217,7 @@ func parseConstDecl(ts *TokenStream) model.Statement {
 }
 
 func parseVarDecl(ts *TokenStream) model.Statement {
+	log.Debugf("parseVarDecl")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		ts.Expect("VAR")
@@ -228,7 +230,7 @@ func parseVarDecl(ts *TokenStream) model.Statement {
 			typ = &model.NameType{tok.Value}
 		}
 		var value model.Expression
-		if tok := ts.Accept("="); tok != nil {
+		if tok := ts.Accept("ASSIGN"); tok != nil {
 			value = parseExpression(ts)
 		}
 		ts.Expect("SEMI")

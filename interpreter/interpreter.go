@@ -253,7 +253,9 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		val := InterpretNode(v.Value, context)
 		// assign the value to the name
 		_ = context.Assign(v.Location.(*model.Name).Text, val)
-
+		// print (c=4) + 4
+		// just return the val ?
+		return val
 	case *model.PrintStatement:
 		fmt.Println(InterpretNode(v.Value, context))
 	case *model.Statements:
