@@ -75,7 +75,7 @@ func (ts *TokenStream) Synchronize(types ...string) {
 // pass it back
 type constructFunc func(model.Node) model.Node
 
-func (ts *TokenStream) Builder() func(func(constructFunc) model.Node) {
+func (ts *TokenStream) Builder() func(func(constructFunc) model.Node) model.Node {
 	startLine := ts.lookahead.Lineno
 	startIndex := ts.lookahead.Index
 
@@ -87,7 +87,7 @@ func (ts *TokenStream) Builder() func(func(constructFunc) model.Node) {
 		return node
 	}
 
-	return func(do func(constructFunc) model.Node) {
+	return func(do func(constructFunc) model.Node) model.Node {
 		//defer func() {
 		//	if err := recover(); err != nil {
 		//		if err, ok := err.(SyntaxError); ok {
@@ -98,7 +98,7 @@ func (ts *TokenStream) Builder() func(func(constructFunc) model.Node) {
 		//		}
 		//	}
 		//}()
-		do(construct)
+		return do(construct)
 	}
 }
 
@@ -118,17 +118,19 @@ func ParseProgram(program *model.Program) error {
 }
 
 func parseStatements(ts *TokenStream) model.Node {
-	statements := []model.Statement{}
-	ts.Builder()(func(new constructFunc) model.Node {
+	statements := []model.Statement{} //
+
+	builder := ts.Builder()
+	return builder(func(new constructFunc) model.Node {
 		for ts.Peek("RBRACE", "EOF") != nil {
-			statement := parseStatement(ts)
+			statement := parseStatement(ts) //
 			statements = append(statements, statement)
 		}
 		return new(&model.Statements{statements})
 	})
 }
 
-func parseStatement(ts *TokenStream) Node {
+func parseStatement(ts *TokenStream) model.Statement {
 	// Parse different types of statements
 	if ts.Peek("PRINT") {
 		return parsePrintStmt(ts)
