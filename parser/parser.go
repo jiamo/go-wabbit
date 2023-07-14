@@ -3,6 +3,8 @@ package parser
 import (
 	"errors"
 	"fmt"
+	log "github.com/sirupsen/logrus"
+	"strconv"
 	"wabbit-go/common"
 	"wabbit-go/model"
 	"wabbit-go/tokenize"
@@ -117,38 +119,41 @@ func ParseProgram(program *model.Program) error {
 	return nil
 }
 
-func parseStatements(ts *TokenStream) model.Node {
+// Statements is struct
+// node statement expression is interface..
+func parseStatements(ts *TokenStream) *model.Statements {
 	statements := []model.Statement{} //
 
 	builder := ts.Builder()
-	return builder(func(new constructFunc) model.Node {
+	node := builder(func(new constructFunc) model.Node {
 		for ts.Peek("RBRACE", "EOF") != nil {
 			statement := parseStatement(ts) //
 			statements = append(statements, statement)
 		}
 		return new(&model.Statements{statements})
 	})
+	return node.(*model.Statements)
 }
 
 func parseStatement(ts *TokenStream) model.Statement {
 	// Parse different types of statements
-	if ts.Peek("PRINT") {
+	if ts.Peek("PRINT") != nil {
 		return parsePrintStmt(ts)
-	} else if ts.Peek("CONST") {
+	} else if ts.Peek("CONST") != nil {
 		return parseConstDecl(ts)
-	} else if ts.Peek("VAR") {
+	} else if ts.Peek("VAR") != nil {
 		return parseVarDecl(ts)
-	} else if ts.Peek("RETURN") {
+	} else if ts.Peek("RETURN") != nil {
 		return parseReturnStmt(ts)
-	} else if ts.Peek("IF") {
+	} else if ts.Peek("IF") != nil {
 		return parseIfStmt(ts)
-	} else if ts.Peek("WHILE") {
+	} else if ts.Peek("WHILE") != nil {
 		return parseWhileStmt(ts)
-	} else if ts.Peek("BREAK") {
+	} else if ts.Peek("BREAK") != nil {
 		return parseBreakStmt(ts)
-	} else if ts.Peek("CONTINUE") {
+	} else if ts.Peek("CONTINUE") != nil {
 		return parseContinueStmt(ts)
-	} else if ts.Peek("FUNC") {
+	} else if ts.Peek("FUNC") != nil {
 		return parseFuncDecl(ts)
 	} else {
 		return parseExprStmt(ts)
@@ -157,272 +162,402 @@ func parseStatement(ts *TokenStream) model.Statement {
 
 // Parse different kinds of statements
 
-func parsePrintStmt(ts *TokenStream) Node {
-	ts.Expect("PRINT")
-	expr := parseExpression(ts)
-	ts.Expect(";")
-	return ts.Builder().Build("PrintStmt", expr)
+func parsePrintStmt(ts *TokenStream) model.Statement {
+	builder := ts.Builder()
+
+	node := builder(func(new constructFunc) model.Node {
+		ts.Expect("PRINT")
+		expr := parseExpression(ts)
+		ts.Expect(";")
+		return new(&model.PrintStatement{expr}) // TODO need to detect Do we need &
+	})
+	return node.(model.Statement)
 }
 
-func parseConstDecl(ts *TokenStream) Node {
-	ts.Expect("CONST")
-	name := ts.Expect("ID").Value
-	var typ string
-	if tok := ts.Accept("ID"); tok != nil {
-		typ = tok.Value
-	}
-	ts.Expect("=")
-	value := parseExpression(ts)
-	ts.Expect(";")
-	return ts.Builder().Build("ConstDecl", name, typ, value)
-}
+func parseConstDecl(ts *TokenStream) model.Statement {
+	builder := ts.Builder()
 
-func parseVarDecl(ts *TokenStream) Node {
-	ts.Expect("VAR")
-	name := ts.Expect("ID").Value
-	var typ string
-	if tok := ts.Accept("ID"); tok != nil {
-		typ = tok.Value
-	}
-	var value Node
-	if ts.Accept("=") {
-		value = parseExpression(ts)
-	}
-	ts.Expect(";")
-	return ts.Builder().Build("VarDecl", name, typ, value)
-}
+	node := builder(func(new constructFunc) model.Node {
+		ts.Expect("CONST")
+		nameTk, err := ts.Expect("ID")
+		if err != nil {
 
-func parseExprStmt(ts *TokenStream) Node {
-	expr := parseExpression(ts)
-	ts.Expect(";")
-	return ts.Builder().Build("ExprStmt", expr)
-}
-
-func parseIfStmt(ts *TokenStream) Node {
-	ts.Expect("IF")
-	test := parseExpression(ts)
-	ts.Expect("{")
-	consequence := parseStatements(ts)
-	ts.Expect("}")
-	var alternative []Node
-	if ts.Accept("ELSE") {
-		ts.Expect("{")
-		alternative = parseStatements(ts)
-		ts.Expect("}")
-	}
-	return ts.Builder().Build("IfStmt", test, consequence, alternative)
-}
-
-func parseWhileStmt(ts *TokenStream) Node {
-	ts.Expect("WHILE")
-	test := parseExpression(ts)
-	ts.Expect("{")
-	body := parseStatements(ts)
-	ts.Expect("}")
-	return ts.Builder().Build("WhileStmt", test, body)
-}
-
-func parseBreakStmt(ts *TokenStream) Node {
-	ts.Expect("BREAK")
-	ts.Expect(";")
-	return ts.Builder().Build("BreakStmt")
-}
-
-func parseContinueStmt(ts *TokenStream) Node {
-	ts.Expect("CONTINUE")
-	ts.Expect(";")
-	return ts.Builder().Build("ContinueStmt")
-}
-
-func parseReturnStmt(ts *TokenStream) Node {
-	ts.Expect("RETURN")
-	value := parseExpression(ts)
-	ts.Expect(";")
-	return ts.Builder().Build("ReturnStmt", value)
-}
-
-func parseFuncDecl(ts *TokenStream) Node {
-	ts.Expect("FUNC")
-	name := ts.Expect("ID").Value
-	ts.Expect("(")
-	var params []Node
-	for !ts.Peek(")") {
-		pname := ts.Expect("ID").Value
-		ptype := ts.Expect("ID").Value
-		param := ts.Builder().Build("Param", pname, ptype)
-		params = append(params, param)
-		if !ts.Peek(")") {
-			ts.Expect(",")
 		}
-	}
-	ts.Expect(")")
-	retType := ts.Expect("ID").Value
-	ts.Expect("{")
-	body := parseStatements(ts)
-	ts.Expect("}")
-	return ts.Builder().Build("FuncDecl", name, params, retType, body)
+		name := nameTk.Value
+		var typ model.Type
+		if tok := ts.Accept("ID"); tok != nil {
+			typ = &model.NameType{tok.Value}
+		}
+		ts.Expect("=")
+		value := parseExpression(ts)
+		ts.Expect(";")
+		return new(&model.ConstDeclaration{model.Name{name}, typ, value})
+	})
+
+	return node.(model.Statement)
 }
 
-func parseExpression(ts *TokenStream) Node {
+func parseVarDecl(ts *TokenStream) model.Statement {
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		ts.Expect("VAR")
+		name, err := ts.Expect("ID")
+		if err != nil {
+			log.Debugf("err parseVarDecl")
+		}
+		var typ model.Type
+		if tok := ts.Accept("ID"); tok != nil {
+			typ = &model.NameType{tok.Value}
+		}
+		var value model.Expression
+		if tok := ts.Accept("="); tok != nil {
+			value = parseExpression(ts)
+		}
+		ts.Expect(";")
+		return new(model.VarDeclaration{model.Name{name.Value}, typ, value})
+	})
+	return node.(model.Statement)
+}
+
+func parseExprStmt(ts *TokenStream) model.Statement {
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		expr := parseExpression(ts)
+		ts.Expect(";")
+		return new(model.ExpressionAsStatement{expr})
+	})
+	return node.(model.Statement)
+}
+
+func parseIfStmt(ts *TokenStream) model.Statement {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		ts.Expect("IF")
+		test := parseExpression(ts)
+		ts.Expect("{")
+		consequence := parseStatements(ts)
+		ts.Expect("}")
+		var alternative *model.Statements
+		if ts.Accept("ELSE") != nil {
+			ts.Expect("{")
+			alternative = parseStatements(ts)
+			ts.Expect("}")
+		}
+		// how strange the same struct using different type
+		return new(model.IfStatement{test, *consequence, alternative})
+	})
+	return node.(model.Statement)
+
+}
+
+func parseWhileStmt(ts *TokenStream) model.Statement {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+
+		ts.Expect("WHILE")
+		test := parseExpression(ts)
+		ts.Expect("{")
+		body := parseStatements(ts)
+		ts.Expect("}")
+		// how strange the same struct using different type
+		return new(model.WhileStatement{test, *body})
+	})
+	return node.(model.Statement)
+}
+
+func parseBreakStmt(ts *TokenStream) model.Statement {
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+
+		ts.Expect("BREAK")
+		ts.Expect(";")
+		return new(model.BreakStatement{})
+	})
+	return node.(model.Statement)
+}
+
+func parseContinueStmt(ts *TokenStream) model.Statement {
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+
+		ts.Expect("CONTINUE")
+		ts.Expect(";")
+		return new(model.ContinueStatement{})
+	})
+	return node.(model.Statement)
+
+}
+
+func parseReturnStmt(ts *TokenStream) model.Statement {
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+
+		ts.Expect("RETURN")
+		value := parseExpression(ts)
+		ts.Expect(";")
+		return new(model.ReturnStatement{value})
+	})
+	return node.(model.Statement)
+}
+
+func parseFuncDecl(ts *TokenStream) model.Statement {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+
+		ts.Expect("FUNC")
+		nameToken, err := ts.Expect("ID")
+		if err != nil {
+			log.Debugf("")
+		}
+		name := model.Name{nameToken.Value}
+		ts.Expect("(")
+		var params []model.Parameter
+		for ts.Peek(")") != nil {
+
+			paramsBuilder := ts.Builder()
+			node := paramsBuilder(func(newp constructFunc) model.Node {
+				pnameToken, err := ts.Expect("ID")
+				if err != nil {
+					log.Debugf("")
+				}
+				pname := model.Name{pnameToken.Value}
+				ptypeNode, err := ts.Expect("ID")
+				if err != nil {
+					log.Debugf("")
+				}
+				ptype := model.NameType{ptypeNode.Value}
+				//too complicate to use nest context TODO we may should do at the end
+				//param := ts.Builder().Build("Param", pname, ptype)
+				//param := model.Parameter{pname, &ptype}
+				return newp(&model.Parameter{pname, &ptype})
+			})
+			param := node.(*model.Parameter)
+			params = append(params, *param)
+			if ts.Peek(")") != nil {
+				ts.Expect(",")
+			}
+		}
+		ts.Expect(")")
+		retTypeNode, err := ts.Expect("ID")
+		if err != nil {
+			log.Debugf("")
+		}
+		retType := model.NameType{retTypeNode.Value}
+		ts.Expect("{")
+		body := parseStatements(ts)
+		ts.Expect("}")
+		return new(model.FunctionDeclaration{name, params, &retType, *body})
+	})
+	return node.(model.Statement)
+
+	//return ts.Builder().Build("FuncDecl", name, params, retType, body)
+}
+
+func parseExpression(ts *TokenStream) model.Expression {
 	return parseAssignExpr(ts)
 }
 
-func parseAssignExpr(ts *TokenStream) Node {
-	left := parseOrExpr(ts)
-	for ts.Peek("=") {
-		ts.Next()
-		right := parseAssignExpr(ts)
-		left = ts.Builder().Build("AssignExpr", left, right)
-	}
-	return left
-}
+func parseAssignExpr(ts *TokenStream) model.Expression {
 
-func parseOrExpr(ts *TokenStream) Node {
-	left := parseAndExpr(ts)
-	for ts.Peek("||") {
-		ts.Next()
-		right := parseAndExpr(ts)
-		left = ts.Builder().Build("OrExpr", left, right)
-	}
-	return left
-}
-
-func parseAndExpr(ts *TokenStream) Node {
-	left := parseRelExpr(ts)
-	for ts.Peek("&&") {
-		ts.Next()
-		right := parseRelExpr(ts)
-		left = ts.Builder().Build("AndExpr", left, right)
-	}
-	return left
-}
-
-func parseRelExpr(ts *TokenStream) Node {
-	left := parseAddExpr(ts)
-
-	for ts.Peek("<", "<=", ">", ">=", "==", "!=") {
-		op := ts.Next().Value
-		right := parseAddExpr(ts)
-		left = ts.Builder().Build("RelExpr", left, op, right)
-	}
-
-	return left
-}
-
-func parseAddExpr(ts *TokenStream) Node {
-	left := parseMulExpr(ts)
-
-	for ts.Peek("+", "-") {
-		op := ts.Next().Value
-		right := parseMulExpr(ts)
-		left = ts.Builder().Build("AddExpr", left, op, right)
-	}
-
-	return left
-}
-
-func parseMulExpr(ts *TokenStream) Node {
-	left := parseFactor(ts)
-
-	for ts.Peek("*", "/") {
-		op := ts.Next().Value
-		right := parseFactor(ts)
-		left = ts.Builder().Build("MulExpr", left, op, right)
-	}
-
-	return left
-}
-
-func parseFactor(ts *TokenStream) Node {
-	// Parse expressions
-	if ts.Peek("INTEGER") {
-		return ts.Builder().Build("Integer", ts.Next().Value)
-	} else if ts.Peek("FLOAT") {
-		return ts.Builder().Build("Float", ts.Next().Value)
-	} else if ts.Peek("TRUE", "FALSE") {
-		return ts.Builder().Build("Bool", ts.Next().Value)
-	} else if ts.Peek("CHAR") {
-		return ts.Builder().Build("Char", ts.Next().Value)
-	} else if ts.Peek("(") {
-		ts.Next()
-		expr := parseExpression(ts)
-		ts.Expect(")")
-		return ts.Builder().Build("ParenExpr", expr)
-	} else if ts.Peek("{") {
-		ts.Next()
-		stmts := parseStatements(ts)
-		ts.Expect("}")
-		return ts.Builder().Build("CompoundExpr", stmts...)
-	} else if ts.Peek("+", "-", "!") {
-		op := ts.Next().Value
-		operand := parseFactor(ts)
-		return ts.Builder().Build("UnaryExpr", op, operand)
-	} else if ts.Peek("ID") {
-		// Either a variable or function call
-		id := ts.Next().Value
-		if ts.Peek("(") {
-			ts.Next()
-			args := parseArguments(ts)
-			ts.Expect(")")
-			return ts.Builder().Build("CallExpr", id, args...)
-		} else {
-			return ts.Builder().Build("Variable", id)
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		left := parseOrExpr(ts)
+		for ts.Accept("ASSIGN") != nil {
+			right := parseAssignExpr(ts)
+			left = new(model.Assignment{left, right}).(model.Expression)
 		}
-	}
+		return left
+	})
+	return node.(model.Expression)
 
-	panic(fmt.Sprintf("Unexpected token %v", ts.Lookahead))
 }
 
-func parseArguments(ts *TokenStream) []Node {
-	var args []Node
-	for !ts.Peek(")") {
+func parseOrExpr(ts *TokenStream) model.Expression {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		left := parseAndExpr(ts)
+		for ts.Accept("LOR") != nil {
+			right := parseAndExpr(ts)
+			left = new(&model.LogOr{left, right}).(model.Expression)
+		}
+		return left
+	})
+	return node.(model.Expression)
+
+}
+
+func parseAndExpr(ts *TokenStream) model.Expression {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		left := parseRelExpr(ts)
+		for ts.Accept("LAND") != nil {
+			right := parseRelExpr(ts)
+			left = new(&model.LogAnd{left, right}).(model.Expression)
+		}
+		return left
+	})
+	return node.(model.Expression)
+
+}
+
+func parseRelExpr(ts *TokenStream) model.Expression {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		left := parseAddExpr(ts)
+
+		for {
+			tok := ts.Accept("<", "<=", ">", ">=", "==", "!=")
+			if tok == nil {
+				break
+			}
+			op := tok.Value
+			right := parseAddExpr(ts)
+			if op == "<" {
+				left = new(model.Lt{left, right}).(model.Expression)
+			} else if op == "<=" {
+				left = new(model.Le{left, right}).(model.Expression)
+			} else if op == ">" {
+				left = new(model.Gt{left, right}).(model.Expression)
+			} else if op == ">=" {
+				left = new(model.Ge{left, right}).(model.Expression)
+			} else if op == "==" {
+				left = new(model.Eq{left, right}).(model.Expression)
+			} else if op == "!=" {
+				left = new(model.Ne{left, right}).(model.Expression)
+			}
+		}
+
+		return left
+	})
+	return node.(model.Expression)
+
+}
+
+func parseAddExpr(ts *TokenStream) model.Expression {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		left := parseMulExpr(ts)
+
+		for {
+			tok := ts.Accept("+", "-")
+			if tok == nil {
+				break
+			}
+			op := tok.Value
+			right := parseMulExpr(ts)
+			if op == "+" {
+				left = new(model.Add{left, right}).(model.Expression)
+			} else if op == "-" {
+				left = new(model.Sub{left, right}).(model.Expression)
+			}
+		}
+
+		return left
+	})
+	return node.(model.Expression)
+
+}
+
+func parseMulExpr(ts *TokenStream) model.Expression {
+
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		left := parseFactor(ts)
+
+		for {
+			tok := ts.Accept("*", "/")
+			if tok == nil {
+				break
+			}
+			op := tok.Value
+			right := parseFactor(ts)
+			if op == "*" {
+				left = new(model.Mul{left, right}).(model.Expression)
+			} else if op == "/" {
+				left = new(model.Div{left, right}).(model.Expression)
+			}
+		}
+
+		return left
+	})
+	return node.(model.Expression)
+}
+
+func parseFactor(ts *TokenStream) model.Expression {
+	builder := ts.Builder()
+	node := builder(func(new constructFunc) model.Node {
+		// Parse expressions
+		if tok := ts.Accept("INTEGER"); tok != nil {
+			num, err := strconv.Atoi(tok.Value)
+			if err != nil {
+				log.Errorf("")
+				return nil
+			}
+			return new(model.Integer{num})
+		} else if tok := ts.Accept("FLOAT"); tok != nil {
+			num, err := strconv.ParseFloat(tok.Value, 64)
+			if err != nil {
+				log.Errorf("")
+				return nil
+			}
+			return new(model.Float{num})
+		} else if tok := ts.Accept("TRUE", "FALSE"); tok != nil {
+			return new(model.NameBool{tok.Value})
+		} else if ts.Accept("CHAR"); tok != nil {
+			return new(model.Character{tok.Value})
+		} else if tok := ts.Accept("LPAREN"); tok != nil {
+			expr := parseExpression(ts)
+			ts.Expect("RPAREN")
+			return new(model.Grouping{expr})
+		} else if tok := ts.Accept("LBRACE"); tok != nil {
+			stmts := parseStatements(ts)
+			ts.Expect("RBRACE")
+			return new(model.CompoundExpression{stmts.Statements})
+		} else if tok := ts.Accept("+", "-", "!"); tok != nil {
+			operand := parseFactor(ts)
+			if tok.Value == "+" {
+				return new(model.Pos{operand})
+			} else if tok.Value == "-" {
+				return new(model.Neg{operand})
+			} else if tok.Value == "!" {
+				return new(model.Not{operand})
+			}
+		} else if tok := ts.Accept("ID"); tok != nil {
+			// Either a variable or function call
+			// do we need a parse location.... ?
+			if ts.Accept("LPAREN") != nil {
+				args := parseArguments(ts)
+				ts.Expect("RPAREN")
+				return new(model.FunctionApplication{&model.Name{tok.Value}, args})
+			} else {
+				return new(model.Name{tok.Value})
+			}
+		} else {
+			panic(fmt.Sprintf("Unexpected token %v", ts.lookahead))
+		}
+		return nil
+	})
+	return node.(model.Expression)
+	//panic(fmt.Sprintf("Unexpected token %v", ts.Lookahead))
+}
+
+func parseArguments(ts *TokenStream) []model.Expression {
+
+	var args []model.Expression
+	for ts.Peek(")") != nil {
 		expr := parseExpression(ts)
 		args = append(args, expr)
-		if !ts.Peek(")") {
+		if ts.Peek(")") != nil {
 			ts.Expect(",")
 		}
 	}
 	return args
-}
 
-//// Helper functions
-//
-//func newNode(typ string, children ...Node) *Node {
-//	return &Node{typ, children}
-//}
-//
-//type Node struct {
-//	Type     string
-//	Children []Node
-//}
-//
-//func (n *Node) Pos() (int, int) {
-//	// Unimplemented
-//	return 0, 0
-//}
-//
-//type Program struct {
-//	Source string
-//	AST    []Node
-//}
-//
-//func (p *Program) Pos(node Node, startLine, startIndex, endIndex int) {
-//	// Unimplemented
-//}
-//
-//func tokenize(source string) chan *Token {
-//	// Lexical analysis, unimplemented
-//	return make(chan *Token)
-//}
-
-func Main() {
-	// Test parsing
-	source := `
-  const PI = 3.14;
-  var r number;
-  print area(r); 
-`
-	program := &Program{source, nil}
-	ParseProgram(program)
-	fmt.Println(program.AST)
 }

@@ -169,6 +169,13 @@ type Pos struct {
 func (n *Pos) ExpressionNode() {}
 func (n *Pos) Id() int         { return GetNodeInfo(n).Id }
 
+type Not struct {
+	Operand Expression
+}
+
+func (n *Not) ExpressionNode() {}
+func (n *Not) Id() int         { return GetNodeInfo(n).Id }
+
 type BinOpWithOp struct {
 	Op    string
 	Left  Expression
