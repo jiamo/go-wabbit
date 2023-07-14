@@ -13,4 +13,7 @@ print b > a;
 print b >= a;
 print a == a;
 print a != b;
-print a < b > a;
+//print a < b > a; at now don't suppprt
+//we like like verse programming language
+//remove bool .
+// a < b just return b

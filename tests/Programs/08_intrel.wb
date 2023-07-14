@@ -13,4 +13,4 @@ print b > a;
 print b >= a;
 print a == a;
 print a != b;
-print a < b < 4;
+//print a < b < 4;

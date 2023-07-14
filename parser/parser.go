@@ -255,14 +255,14 @@ func parseIfStmt(ts *TokenStream) model.Statement {
 	node := builder(func(new constructFunc) model.Node {
 		ts.Expect("IF")
 		test := parseExpression(ts)
-		ts.Expect("{")
+		ts.Expect("LBRACE")
 		consequence := parseStatements(ts)
-		ts.Expect("}")
+		ts.Expect("RBRACE")
 		var alternative *model.Statements
 		if ts.Accept("ELSE") != nil {
-			ts.Expect("{")
+			ts.Expect("LBRACE")
 			alternative = parseStatements(ts)
-			ts.Expect("}")
+			ts.Expect("RBRACE")
 		}
 		// how strange the same struct using different type
 		return new(&model.IfStatement{test, *consequence, alternative})
@@ -278,9 +278,9 @@ func parseWhileStmt(ts *TokenStream) model.Statement {
 
 		ts.Expect("WHILE")
 		test := parseExpression(ts)
-		ts.Expect("{")
+		ts.Expect("LBRACE")
 		body := parseStatements(ts)
-		ts.Expect("}")
+		ts.Expect("RBRACE")
 		// how strange the same struct using different type
 		return new(&model.WhileStatement{test, *body})
 	})
@@ -333,9 +333,9 @@ func parseFuncDecl(ts *TokenStream) model.Statement {
 			log.Debugf("")
 		}
 		name := model.Name{nameToken.Value}
-		ts.Expect("(")
+		ts.Expect("LPAREN")
 		var params []model.Parameter
-		for ts.Peek(")") != nil {
+		for ts.Peek("RPAREN") != nil {
 
 			paramsBuilder := ts.Builder()
 			node := paramsBuilder(func(newp constructFunc) model.Node {
@@ -356,19 +356,19 @@ func parseFuncDecl(ts *TokenStream) model.Statement {
 			})
 			param := node.(*model.Parameter)
 			params = append(params, *param)
-			if ts.Peek(")") != nil {
-				ts.Expect(",")
+			if ts.Peek("LPAREN") != nil {
+				ts.Expect("COMMA")
 			}
 		}
-		ts.Expect(")")
+		ts.Expect("RPAREN")
 		retTypeNode, err := ts.Expect("ID")
 		if err != nil {
 			log.Debugf("")
 		}
 		retType := model.NameType{retTypeNode.Value}
-		ts.Expect("{")
+		ts.Expect("LBRACE")
 		body := parseStatements(ts)
-		ts.Expect("}")
+		ts.Expect("RBRACE")
 		return new(&model.FunctionDeclaration{name, params, &retType, *body})
 	})
 	return node.(model.Statement)
@@ -531,7 +531,7 @@ func parseFactor(ts *TokenStream) model.Expression {
 			return new(&model.Float{num})
 		} else if tok := ts.Accept("TRUE", "FALSE"); tok != nil {
 			return new(&model.NameBool{tok.Value})
-		} else if ts.Accept("CHAR"); tok != nil {
+		} else if tok := ts.Accept("CHAR"); tok != nil {
 			return new(&model.Character{tok.Value})
 		} else if tok := ts.Accept("LPAREN"); tok != nil {
 			log.Debugf("factor LPAREN")

@@ -3,6 +3,7 @@ package interpreter
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"wabbit-go/common"
 	"wabbit-go/model"
 )
@@ -103,6 +104,12 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		return &WabbitValue{"int", v.Value}
 	case *model.Float:
 		return &WabbitValue{"float", v.Value}
+	case *model.Character:
+		unquoted, err := strconv.Unquote(v.Value)
+		if err != nil {
+			panic(err)
+		}
+		return &WabbitValue{"char", rune(unquoted[0])}
 	case *model.Name:
 		value, _ := context.Lookup(v.Text) // somethings we may need exist
 		// check value.Value is WabbitVar if success then return  its load
@@ -231,6 +238,36 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
+	case *model.Le:
+		left := InterpretNode(v.Left, context)
+		right := InterpretNode(v.Right, context)
+		if left.Type == "int" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(int) <= right.Value.(int)}
+		} else if left.Type == "float" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(float64) <= right.Value.(float64)}
+		} else {
+			return &WabbitValue{Type: "error", Value: "type error"}
+		}
+	case *model.Gt:
+		left := InterpretNode(v.Left, context)
+		right := InterpretNode(v.Right, context)
+		if left.Type == "int" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(int) > right.Value.(int)}
+		} else if left.Type == "float" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(float64) > right.Value.(float64)}
+		} else {
+			return &WabbitValue{Type: "error", Value: "type error"}
+		}
+	case *model.Ge:
+		left := InterpretNode(v.Left, context)
+		right := InterpretNode(v.Right, context)
+		if left.Type == "int" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(int) >= right.Value.(int)}
+		} else if left.Type == "float" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(float64) >= right.Value.(float64)}
+		} else {
+			return &WabbitValue{Type: "error", Value: "type error"}
+		}
 	case *model.Eq:
 		left := InterpretNode(v.Left, context)
 		right := InterpretNode(v.Right, context)
@@ -238,6 +275,20 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return &WabbitValue{Type: "bool", Value: left.Value.(int) == right.Value.(int)}
 		} else if left.Type == "float" {
 			return &WabbitValue{Type: "bool", Value: left.Value.(float64) == right.Value.(float64)}
+		} else if left.Type == "bool" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(bool) == right.Value.(bool)}
+		} else {
+			return &WabbitValue{Type: "error", Value: "type error"}
+		}
+	case *model.Ne:
+		left := InterpretNode(v.Left, context)
+		right := InterpretNode(v.Right, context)
+		if left.Type == "int" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(int) != right.Value.(int)}
+		} else if left.Type == "float" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(float64) != right.Value.(float64)}
+		} else if left.Type == "bool" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(bool) != right.Value.(bool)}
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
@@ -257,7 +308,19 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		// just return the val ?
 		return val
 	case *model.PrintStatement:
-		fmt.Println(InterpretNode(v.Value, context))
+		value := InterpretNode(v.Value, context)
+		switch value.Type {
+		case "char":
+			fmt.Printf("%c", value.Value.(rune)) // we may need change
+		case "bool":
+			if value.Value.(bool) {
+				fmt.Println("true")
+			} else {
+				fmt.Println("false")
+			}
+		default:
+			fmt.Println(value)
+		}
 	case *model.Statements:
 
 		var result *WabbitValue
