@@ -1,11 +1,19 @@
 package common
 
-import "sync"
+import (
+	log "github.com/sirupsen/logrus"
+	"sync"
+)
 
+func init() {
+	log.SetLevel(log.DebugLevel)
+}
 func SliceToChannel[T any](tokens []T) chan T {
 	tokenChan := make(chan T)
+	log.Debugf("sending tokens")
 	go func() {
 		for _, token := range tokens {
+			log.Debugf("send token is %v", token)
 			tokenChan <- token
 		}
 		close(tokenChan)

@@ -10,6 +10,11 @@ import (
 	"wabbit-go/tokenize"
 )
 
+func init() {
+	// how to control the log level all the package
+	log.SetLevel(log.DebugLevel)
+}
+
 type EOF struct {
 	Type   string
 	Value  string
@@ -23,13 +28,16 @@ type TokenStream struct {
 	program    *model.Program
 	gen        chan tokenize.Token
 	lookahead  tokenize.Token
+	current    tokenize.Token // save
 	lastIndex  int
 	haveErrors bool
 }
 
 func NewTokenStream(program *model.Program) (*TokenStream, error) {
 	tokens, err := tokenize.Tokenize(program.Source)
+
 	if err != nil {
+		log.Errorf("tokenize err %v", err)
 		return nil, err
 	}
 	ts := &TokenStream{
@@ -38,23 +46,29 @@ func NewTokenStream(program *model.Program) (*TokenStream, error) {
 		haveErrors: false,
 	}
 	ts.lookahead = <-ts.gen
+	log.Debugf("beginning %v", ts.lookahead)
 	return ts, nil
 }
 
 func (ts *TokenStream) Peek(types ...string) *tokenize.Token {
+	log.Debugf("Peeking %v while ts.lookahead.Type is %v ", types, ts.lookahead.Type)
 	for _, t := range types {
 		if ts.lookahead.Type == t {
-			return &ts.lookahead
+			ts.current = ts.lookahead
+			return &ts.current
 		}
 	}
 	return nil
 }
 
+// the lookhead alreay change we can't just using the point
 func (ts *TokenStream) Accept(types ...string) *tokenize.Token {
 	tok := ts.Peek(types...)
+	log.Debugf("Accpet.... %v while head is %v", types, tok)
 	if tok != nil {
 		ts.lastIndex = ts.lookahead.Index + len(ts.lookahead.Value)
-		ts.lookahead = <-ts.gen
+		ts.lookahead = <-ts.gen // this while overwrite it
+		log.Debugf("ts.lookahead is %v", ts.lookahead)
 	}
 	return tok
 }
@@ -122,11 +136,14 @@ func ParseProgram(program *model.Program) error {
 // Statements is struct
 // node statement expression is interface..
 func parseStatements(ts *TokenStream) *model.Statements {
+	log.Debugf("parseStatements")
 	statements := []model.Statement{} //
 
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
-		for ts.Peek("RBRACE", "EOF") != nil {
+		for ts.Peek("RBRACE", "EOF") == nil {
+			// python not None mean none is None
+			log.Debugf("before parseStatement")
 			statement := parseStatement(ts) //
 			statements = append(statements, statement)
 		}
@@ -164,11 +181,12 @@ func parseStatement(ts *TokenStream) model.Statement {
 
 func parsePrintStmt(ts *TokenStream) model.Statement {
 	builder := ts.Builder()
-
+	log.Debugf("parsePrintStmt")
 	node := builder(func(new constructFunc) model.Node {
 		ts.Expect("PRINT")
 		expr := parseExpression(ts)
-		ts.Expect(";")
+		log.Debugf("parsePrintStmt expr is %v", expr)
+		ts.Expect("SEMI")
 		return new(&model.PrintStatement{expr}) // TODO need to detect Do we need &
 	})
 	return node.(model.Statement)
@@ -190,7 +208,7 @@ func parseConstDecl(ts *TokenStream) model.Statement {
 		}
 		ts.Expect("=")
 		value := parseExpression(ts)
-		ts.Expect(";")
+		ts.Expect("SEMI")
 		return new(&model.ConstDeclaration{model.Name{name}, typ, value})
 	})
 
@@ -213,8 +231,8 @@ func parseVarDecl(ts *TokenStream) model.Statement {
 		if tok := ts.Accept("="); tok != nil {
 			value = parseExpression(ts)
 		}
-		ts.Expect(";")
-		return new(model.VarDeclaration{model.Name{name.Value}, typ, value})
+		ts.Expect("SEMI")
+		return new(&model.VarDeclaration{model.Name{name.Value}, typ, value})
 	})
 	return node.(model.Statement)
 }
@@ -223,8 +241,8 @@ func parseExprStmt(ts *TokenStream) model.Statement {
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		expr := parseExpression(ts)
-		ts.Expect(";")
-		return new(model.ExpressionAsStatement{expr})
+		ts.Expect("SEMI")
+		return new(&model.ExpressionAsStatement{expr})
 	})
 	return node.(model.Statement)
 }
@@ -245,7 +263,7 @@ func parseIfStmt(ts *TokenStream) model.Statement {
 			ts.Expect("}")
 		}
 		// how strange the same struct using different type
-		return new(model.IfStatement{test, *consequence, alternative})
+		return new(&model.IfStatement{test, *consequence, alternative})
 	})
 	return node.(model.Statement)
 
@@ -262,7 +280,7 @@ func parseWhileStmt(ts *TokenStream) model.Statement {
 		body := parseStatements(ts)
 		ts.Expect("}")
 		// how strange the same struct using different type
-		return new(model.WhileStatement{test, *body})
+		return new(&model.WhileStatement{test, *body})
 	})
 	return node.(model.Statement)
 }
@@ -272,8 +290,8 @@ func parseBreakStmt(ts *TokenStream) model.Statement {
 	node := builder(func(new constructFunc) model.Node {
 
 		ts.Expect("BREAK")
-		ts.Expect(";")
-		return new(model.BreakStatement{})
+		ts.Expect("SEMI")
+		return new(&model.BreakStatement{})
 	})
 	return node.(model.Statement)
 }
@@ -283,8 +301,8 @@ func parseContinueStmt(ts *TokenStream) model.Statement {
 	node := builder(func(new constructFunc) model.Node {
 
 		ts.Expect("CONTINUE")
-		ts.Expect(";")
-		return new(model.ContinueStatement{})
+		ts.Expect("SEMI")
+		return new(&model.ContinueStatement{})
 	})
 	return node.(model.Statement)
 
@@ -296,8 +314,8 @@ func parseReturnStmt(ts *TokenStream) model.Statement {
 
 		ts.Expect("RETURN")
 		value := parseExpression(ts)
-		ts.Expect(";")
-		return new(model.ReturnStatement{value})
+		ts.Expect("SEMI")
+		return new(&model.ReturnStatement{value})
 	})
 	return node.(model.Statement)
 }
@@ -349,7 +367,7 @@ func parseFuncDecl(ts *TokenStream) model.Statement {
 		ts.Expect("{")
 		body := parseStatements(ts)
 		ts.Expect("}")
-		return new(model.FunctionDeclaration{name, params, &retType, *body})
+		return new(&model.FunctionDeclaration{name, params, &retType, *body})
 	})
 	return node.(model.Statement)
 
@@ -361,13 +379,13 @@ func parseExpression(ts *TokenStream) model.Expression {
 }
 
 func parseAssignExpr(ts *TokenStream) model.Expression {
-
+	log.Debugf("parseAssignExpr")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		left := parseOrExpr(ts)
 		for ts.Accept("ASSIGN") != nil {
 			right := parseAssignExpr(ts)
-			left = new(model.Assignment{left, right}).(model.Expression)
+			left = new(&model.Assignment{left, right}).(model.Expression)
 		}
 		return left
 	})
@@ -376,7 +394,7 @@ func parseAssignExpr(ts *TokenStream) model.Expression {
 }
 
 func parseOrExpr(ts *TokenStream) model.Expression {
-
+	log.Debugf("parseOrExpr")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		left := parseAndExpr(ts)
@@ -391,7 +409,7 @@ func parseOrExpr(ts *TokenStream) model.Expression {
 }
 
 func parseAndExpr(ts *TokenStream) model.Expression {
-
+	log.Debugf("parseAndExpr")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		left := parseRelExpr(ts)
@@ -406,7 +424,7 @@ func parseAndExpr(ts *TokenStream) model.Expression {
 }
 
 func parseRelExpr(ts *TokenStream) model.Expression {
-
+	log.Debugf("parseRelExpr")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		left := parseAddExpr(ts)
@@ -419,17 +437,17 @@ func parseRelExpr(ts *TokenStream) model.Expression {
 			op := tok.Value
 			right := parseAddExpr(ts)
 			if op == "<" {
-				left = new(model.Lt{left, right}).(model.Expression)
+				left = new(&model.Lt{left, right}).(model.Expression)
 			} else if op == "<=" {
-				left = new(model.Le{left, right}).(model.Expression)
+				left = new(&model.Le{left, right}).(model.Expression)
 			} else if op == ">" {
-				left = new(model.Gt{left, right}).(model.Expression)
+				left = new(&model.Gt{left, right}).(model.Expression)
 			} else if op == ">=" {
-				left = new(model.Ge{left, right}).(model.Expression)
+				left = new(&model.Ge{left, right}).(model.Expression)
 			} else if op == "==" {
-				left = new(model.Eq{left, right}).(model.Expression)
+				left = new(&model.Eq{left, right}).(model.Expression)
 			} else if op == "!=" {
-				left = new(model.Ne{left, right}).(model.Expression)
+				left = new(&model.Ne{left, right}).(model.Expression)
 			}
 		}
 
@@ -440,7 +458,7 @@ func parseRelExpr(ts *TokenStream) model.Expression {
 }
 
 func parseAddExpr(ts *TokenStream) model.Expression {
-
+	log.Debugf("parseAddExpr")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		left := parseMulExpr(ts)
@@ -453,9 +471,9 @@ func parseAddExpr(ts *TokenStream) model.Expression {
 			op := tok.Value
 			right := parseMulExpr(ts)
 			if op == "+" {
-				left = new(model.Add{left, right}).(model.Expression)
+				left = new(&model.Add{left, right}).(model.Expression)
 			} else if op == "-" {
-				left = new(model.Sub{left, right}).(model.Expression)
+				left = new(&model.Sub{left, right}).(model.Expression)
 			}
 		}
 
@@ -466,7 +484,7 @@ func parseAddExpr(ts *TokenStream) model.Expression {
 }
 
 func parseMulExpr(ts *TokenStream) model.Expression {
-
+	log.Debugf("parseMulExpr")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 		left := parseFactor(ts)
@@ -479,9 +497,9 @@ func parseMulExpr(ts *TokenStream) model.Expression {
 			op := tok.Value
 			right := parseFactor(ts)
 			if op == "*" {
-				left = new(model.Mul{left, right}).(model.Expression)
+				left = new(&model.Mul{left, right}).(model.Expression)
 			} else if op == "/" {
-				left = new(model.Div{left, right}).(model.Expression)
+				left = new(&model.Div{left, right}).(model.Expression)
 			}
 		}
 
@@ -492,42 +510,43 @@ func parseMulExpr(ts *TokenStream) model.Expression {
 
 func parseFactor(ts *TokenStream) model.Expression {
 	builder := ts.Builder()
+	log.Debugf("parseFactor")
 	node := builder(func(new constructFunc) model.Node {
 		// Parse expressions
 		if tok := ts.Accept("INTEGER"); tok != nil {
 			num, err := strconv.Atoi(tok.Value)
 			if err != nil {
-				log.Errorf("")
+				log.Errorf("wrong int %v ", tok.Value)
 				return nil
 			}
-			return new(model.Integer{num})
+			return new(&model.Integer{num})
 		} else if tok := ts.Accept("FLOAT"); tok != nil {
 			num, err := strconv.ParseFloat(tok.Value, 64)
 			if err != nil {
-				log.Errorf("")
+				log.Errorf("wrong float %v", tok.Value)
 				return nil
 			}
-			return new(model.Float{num})
+			return new(&model.Float{num})
 		} else if tok := ts.Accept("TRUE", "FALSE"); tok != nil {
-			return new(model.NameBool{tok.Value})
+			return new(&model.NameBool{tok.Value})
 		} else if ts.Accept("CHAR"); tok != nil {
-			return new(model.Character{tok.Value})
+			return new(&model.Character{tok.Value})
 		} else if tok := ts.Accept("LPAREN"); tok != nil {
 			expr := parseExpression(ts)
 			ts.Expect("RPAREN")
-			return new(model.Grouping{expr})
+			return new(&model.Grouping{expr})
 		} else if tok := ts.Accept("LBRACE"); tok != nil {
 			stmts := parseStatements(ts)
 			ts.Expect("RBRACE")
-			return new(model.CompoundExpression{stmts.Statements})
+			return new(&model.CompoundExpression{stmts.Statements})
 		} else if tok := ts.Accept("+", "-", "!"); tok != nil {
 			operand := parseFactor(ts)
 			if tok.Value == "+" {
-				return new(model.Pos{operand})
+				return new(&model.Pos{operand})
 			} else if tok.Value == "-" {
-				return new(model.Neg{operand})
+				return new(&model.Neg{operand})
 			} else if tok.Value == "!" {
-				return new(model.Not{operand})
+				return new(&model.Not{operand})
 			}
 		} else if tok := ts.Accept("ID"); tok != nil {
 			// Either a variable or function call
@@ -535,9 +554,9 @@ func parseFactor(ts *TokenStream) model.Expression {
 			if ts.Accept("LPAREN") != nil {
 				args := parseArguments(ts)
 				ts.Expect("RPAREN")
-				return new(model.FunctionApplication{&model.Name{tok.Value}, args})
+				return new(&model.FunctionApplication{&model.Name{tok.Value}, args})
 			} else {
-				return new(model.Name{tok.Value})
+				return new(&model.Name{tok.Value})
 			}
 		} else {
 			panic(fmt.Sprintf("Unexpected token %v", ts.lookahead))
@@ -560,4 +579,14 @@ func parseArguments(ts *TokenStream) []model.Expression {
 	}
 	return args
 
+}
+
+// main function to test on input files
+func HandleFile(filename string) (*model.Program, error) {
+	prog, err := model.ProgramFromFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	err = ParseProgram(prog)
+	return prog, err
 }

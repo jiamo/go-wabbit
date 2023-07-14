@@ -8,7 +8,7 @@ import (
 
 type Program struct {
 	Source     string
-	Model      interface{}
+	Model      Node
 	HaveErrors bool
 	Db         map[int]Locator
 }
