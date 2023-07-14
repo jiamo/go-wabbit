@@ -306,10 +306,16 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		}
 	case *model.LogOr:
 		left := InterpretNode(v.Left, context)
+		if left.Value.(bool) {
+			return &WabbitValue{Type: "bool", Value: true}
+		}
 		right := InterpretNode(v.Right, context)
 		return &WabbitValue{Type: "bool", Value: left.Value.(bool) || right.Value.(bool)}
 	case *model.LogAnd:
 		left := InterpretNode(v.Left, context)
+		if !left.Value.(bool) {
+			return &WabbitValue{Type: "bool", Value: false}
+		}
 		right := InterpretNode(v.Right, context)
 		return &WabbitValue{Type: "bool", Value: left.Value.(bool) && right.Value.(bool)}
 	case *model.Assignment:
