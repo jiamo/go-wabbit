@@ -333,7 +333,7 @@ func (n *Name) ExpressionNode() {}
 func (n *Name) Id() int         { return GetNodeInfo(n).Id }
 
 type CompoundExpression struct {
-	Statements []Statement
+	Statements Statements
 }
 
 func (n *CompoundExpression) ExpressionNode() {}
@@ -574,7 +574,7 @@ func NodeAsSource(node Node, context *Context) string {
 		}
 	case *CompoundExpression:
 		var ts []string
-		for _, s := range v.Statements {
+		for _, s := range v.Statements.Statements {
 			ts = append(ts, fmt.Sprintf("%s%s", indent_str, NodeAsSource(s, context)))
 		}
 		return fmt.Sprintf("{ %s }", strings.Join(ts, " "))

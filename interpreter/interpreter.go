@@ -235,6 +235,8 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
 		} else if left.Type == "float" {
 			return &WabbitValue{Type: "bool", Value: left.Value.(float64) < right.Value.(float64)}
+		} else if left.Type == "char" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(rune) < right.Value.(rune)}
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
@@ -245,6 +247,8 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return &WabbitValue{Type: "bool", Value: left.Value.(int) <= right.Value.(int)}
 		} else if left.Type == "float" {
 			return &WabbitValue{Type: "bool", Value: left.Value.(float64) <= right.Value.(float64)}
+		} else if left.Type == "char" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(rune) <= right.Value.(rune)}
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
@@ -255,6 +259,8 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return &WabbitValue{Type: "bool", Value: left.Value.(int) > right.Value.(int)}
 		} else if left.Type == "float" {
 			return &WabbitValue{Type: "bool", Value: left.Value.(float64) > right.Value.(float64)}
+		} else if left.Type == "char" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(rune) > right.Value.(rune)}
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
@@ -265,6 +271,8 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return &WabbitValue{Type: "bool", Value: left.Value.(int) >= right.Value.(int)}
 		} else if left.Type == "float" {
 			return &WabbitValue{Type: "bool", Value: left.Value.(float64) >= right.Value.(float64)}
+		} else if left.Type == "char" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(rune) >= right.Value.(rune)}
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
@@ -277,6 +285,8 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return &WabbitValue{Type: "bool", Value: left.Value.(float64) == right.Value.(float64)}
 		} else if left.Type == "bool" {
 			return &WabbitValue{Type: "bool", Value: left.Value.(bool) == right.Value.(bool)}
+		} else if left.Type == "char" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(rune) == right.Value.(rune)}
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
@@ -289,6 +299,8 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			return &WabbitValue{Type: "bool", Value: left.Value.(float64) != right.Value.(float64)}
 		} else if left.Type == "bool" {
 			return &WabbitValue{Type: "bool", Value: left.Value.(bool) != right.Value.(bool)}
+		} else if left.Type == "char" {
+			return &WabbitValue{Type: "bool", Value: left.Value.(rune) != right.Value.(rune)}
 		} else {
 			return &WabbitValue{Type: "error", Value: "type error"}
 		}
@@ -304,8 +316,6 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		val := InterpretNode(v.Value, context)
 		// assign the value to the name
 		_ = context.Assign(v.Location.(*model.Name).Text, val)
-		// print (c=4) + 4
-		// just return the val ?
 		return val
 	case *model.PrintStatement:
 		value := InterpretNode(v.Value, context)
@@ -326,7 +336,6 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		var result *WabbitValue
 		for _, statement := range v.Statements {
 			result = InterpretNode(statement, context)
-
 			// need check break return too
 			if result != nil {
 				if result.Type == "break" || result.Type == "return" || result.Type == "continue" {
@@ -337,7 +346,9 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		return result
 
 	case *model.ExpressionAsStatement:
-		InterpretNode(v.Expression, context)
+		return InterpretNode(v.Expression, context)
+		// should return a = {a , b , c} must return one
+		// when c as ExpressionAsStatement
 
 	case *model.Grouping:
 		return InterpretNode(v.Expression, context)
@@ -379,7 +390,6 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 				}
 				continue
 			} else {
-
 				break
 			}
 		}
@@ -424,7 +434,8 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 				return bodyValue
 			}
 		}
-
+	case *model.CompoundExpression:
+		return InterpretNode(&v.Statements, context)
 	default:
 		panic(fmt.Sprintf("Can't intepre %#v to source", v))
 	}

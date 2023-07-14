@@ -542,7 +542,7 @@ func parseFactor(ts *TokenStream) model.Expression {
 		} else if tok := ts.Accept("LBRACE"); tok != nil {
 			stmts := parseStatements(ts)
 			ts.Expect("RBRACE")
-			return new(&model.CompoundExpression{stmts.Statements})
+			return new(&model.CompoundExpression{*stmts})
 		} else if tok := ts.Accept("PLUS", "MINUS", "LNOT"); tok != nil {
 			log.Debugf("token 0 %v ", tok)
 			operand := parseFactor(ts)
