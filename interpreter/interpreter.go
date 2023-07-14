@@ -413,6 +413,26 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 				result := InterpretNode(v.Arguments[0], context) // # type conversion must only have one args ?
 				if result.Type == "float" {
 					return &WabbitValue{"int", int(result.Value.(float64))}
+				} else if result.Type == "char" {
+					return &WabbitValue{"int", int(result.Value.(rune))}
+				}
+				return result
+			}
+			if value.Value == "float" {
+				result := InterpretNode(v.Arguments[0], context) // # type conversion must only have one args ?
+				if result.Type == "int" {
+					return &WabbitValue{"float", float64(result.Value.(int))}
+				} else if result.Type == "char" {
+					return &WabbitValue{"float", float64(result.Value.(rune))}
+				}
+				return result
+			}
+			if value.Value == "char" {
+				result := InterpretNode(v.Arguments[0], context) // # type conversion must only have one args ?
+				if result.Type == "int" {
+					return &WabbitValue{"char", rune(result.Value.(int))}
+				} else if result.Type == "float64" {
+					return &WabbitValue{"float", rune(result.Value.(float64))}
 				}
 				return result
 			}

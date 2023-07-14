@@ -10,7 +10,7 @@ func init() {
 }
 func SliceToChannel[T any](tokens []T) chan T {
 	tokenChan := make(chan T)
-	log.Debugf("sending tokens")
+	log.Debugf("sending tokens %v", tokens)
 	go func() {
 		for _, token := range tokens {
 			log.Debugf("send token is %v", token)

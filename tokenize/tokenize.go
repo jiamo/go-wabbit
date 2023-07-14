@@ -45,6 +45,10 @@ var literals = map[string]string{
 
 var keywords = map[string]bool{"print": true, "if": true, "else": true, "var": true, "const": true, "func": true, "while": true, "break": true, "continue": true, "return": true, "true": true, "false": true}
 
+func isAlnum(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
 // tokenize function
 func Tokenize(text string) ([]Token, error) {
 	var err error
@@ -97,7 +101,7 @@ func Tokenize(text string) ([]Token, error) {
 			continue
 		} else if unicode.IsLetter(rune(text[n])) || text[n] == '_' {
 			start := n
-			for n < size && (unicode.IsLetter(rune(text[n])) || text[n] == '_') {
+			for n < size && (isAlnum(rune(text[n])) || text[n] == '_') {
 				n++
 			}
 			tokType := text[start:n]

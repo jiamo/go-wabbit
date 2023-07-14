@@ -76,7 +76,8 @@ func (ts *TokenStream) Accept(types ...string) *tokenize.Token {
 func (ts *TokenStream) Expect(types ...string) (*tokenize.Token, error) {
 	tok := ts.Accept(types...)
 	if tok == nil {
-		return nil, errors.New(fmt.Sprintf("Syntax error at %s expect %v but got %v", ts.lookahead.Value, types, tok))
+		return nil, errors.New(fmt.Sprintf("Syntax error at %s expect %v but got %v pos %v",
+			ts.lookahead.Value, types, tok, ts.lastIndex))
 	}
 	return tok, nil
 }
@@ -323,41 +324,39 @@ func parseReturnStmt(ts *TokenStream) model.Statement {
 }
 
 func parseFuncDecl(ts *TokenStream) model.Statement {
-
+	log.Debugf("parseFuncDecl")
 	builder := ts.Builder()
 	node := builder(func(new constructFunc) model.Node {
 
 		ts.Expect("FUNC")
 		nameToken, err := ts.Expect("ID")
 		if err != nil {
-			log.Debugf("")
+			log.Debugf("parseFuncDecl %v", err)
 		}
 		name := model.Name{nameToken.Value}
 		ts.Expect("LPAREN")
 		var params []model.Parameter
-		for ts.Peek("RPAREN") != nil {
+		for ts.Peek("RPAREN") == nil {
 
 			paramsBuilder := ts.Builder()
 			node := paramsBuilder(func(newp constructFunc) model.Node {
 				pnameToken, err := ts.Expect("ID")
 				if err != nil {
-					log.Debugf("")
+					log.Debugf("wrong %v", err)
 				}
 				pname := model.Name{pnameToken.Value}
 				ptypeNode, err := ts.Expect("ID")
 				if err != nil {
-					log.Debugf("")
+					log.Debugf("wrong %v", err)
 				}
 				ptype := model.NameType{ptypeNode.Value}
-				//too complicate to use nest context TODO we may should do at the end
-				//param := ts.Builder().Build("Param", pname, ptype)
-				//param := model.Parameter{pname, &ptype}
 				return newp(&model.Parameter{pname, &ptype})
 			})
 			param := node.(*model.Parameter)
 			params = append(params, *param)
-			if ts.Peek("LPAREN") != nil {
-				ts.Expect("COMMA")
+
+			if ts.Peek("RPAREN") == nil {
+				ts.Expect("COMMA") // not ) may comma
 			}
 		}
 		ts.Expect("RPAREN")
@@ -577,11 +576,11 @@ func parseFactor(ts *TokenStream) model.Expression {
 func parseArguments(ts *TokenStream) []model.Expression {
 
 	var args []model.Expression
-	for ts.Peek(")") != nil {
+	for ts.Peek("RPAREN") == nil { // 不是
 		expr := parseExpression(ts)
 		args = append(args, expr)
-		if ts.Peek(")") != nil {
-			ts.Expect(",")
+		if ts.Peek("RPAREN") == nil {
+			ts.Expect("COMMA")
 		}
 	}
 	return args
