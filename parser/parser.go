@@ -25,10 +25,10 @@ type EOF struct {
 var eof = EOF{"EOF", "EOF", "EOF", -1}
 
 type TokenStream struct {
-	program    *model.Program
-	gen        chan tokenize.Token
-	lookahead  tokenize.Token
-	current    tokenize.Token // save
+	program   *model.Program
+	gen       chan tokenize.Token
+	lookahead tokenize.Token
+	//current    tokenize.Token // save
 	lastIndex  int
 	haveErrors bool
 }
@@ -54,8 +54,8 @@ func (ts *TokenStream) Peek(types ...string) *tokenize.Token {
 	log.Debugf("Peeking %v while ts.lookahead.Type is %v ", types, ts.lookahead.Type)
 	for _, t := range types {
 		if ts.lookahead.Type == t {
-			ts.current = ts.lookahead
-			return &ts.current
+			current := ts.lookahead
+			return &current // why ts.current can be changed too!
 		}
 	}
 	return nil
@@ -430,7 +430,7 @@ func parseRelExpr(ts *TokenStream) model.Expression {
 		left := parseAddExpr(ts)
 
 		for {
-			tok := ts.Accept("<", "<=", ">", ">=", "==", "!=")
+			tok := ts.Accept("LT", "LE", "GT", "GE", "EQ", "NE")
 			if tok == nil {
 				break
 			}
@@ -464,7 +464,7 @@ func parseAddExpr(ts *TokenStream) model.Expression {
 		left := parseMulExpr(ts)
 
 		for {
-			tok := ts.Accept("+", "-")
+			tok := ts.Accept("PLUS", "MINUS")
 			if tok == nil {
 				break
 			}
@@ -490,7 +490,7 @@ func parseMulExpr(ts *TokenStream) model.Expression {
 		left := parseFactor(ts)
 
 		for {
-			tok := ts.Accept("*", "/")
+			tok := ts.Accept("TIMES", "DIVIDE")
 			if tok == nil {
 				break
 			}
@@ -532,14 +532,17 @@ func parseFactor(ts *TokenStream) model.Expression {
 		} else if ts.Accept("CHAR"); tok != nil {
 			return new(&model.Character{tok.Value})
 		} else if tok := ts.Accept("LPAREN"); tok != nil {
+			log.Debugf("factor LPAREN")
 			expr := parseExpression(ts)
 			ts.Expect("RPAREN")
+			log.Debugf("factor RPAREN")
 			return new(&model.Grouping{expr})
 		} else if tok := ts.Accept("LBRACE"); tok != nil {
 			stmts := parseStatements(ts)
 			ts.Expect("RBRACE")
 			return new(&model.CompoundExpression{stmts.Statements})
-		} else if tok := ts.Accept("+", "-", "!"); tok != nil {
+		} else if tok := ts.Accept("PLUS", "MINUS", "LNOT"); tok != nil {
+			log.Debugf("token 0 %v ", tok)
 			operand := parseFactor(ts)
 			if tok.Value == "+" {
 				return new(&model.Pos{operand})
@@ -547,6 +550,8 @@ func parseFactor(ts *TokenStream) model.Expression {
 				return new(&model.Neg{operand})
 			} else if tok.Value == "!" {
 				return new(&model.Not{operand})
+			} else {
+				panic(fmt.Sprintf("Unexpected token 1 %v", tok))
 			}
 		} else if tok := ts.Accept("ID"); tok != nil {
 			// Either a variable or function call

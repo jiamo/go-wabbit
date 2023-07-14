@@ -175,6 +175,35 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 			// we think it's a type error
 			return &WabbitValue{"error", "type error"}
 		}
+
+	case *model.Neg:
+		right := InterpretNode(v.Operand, context)
+		if right.Type == "int" {
+			return &WabbitValue{"int", -right.Value.(int)}
+		} else if right.Type == "float" {
+			return &WabbitValue{"float", -right.Value.(float64)}
+		} else {
+			// we think it's a type error
+			return &WabbitValue{"error", "type error"}
+		}
+	case *model.Pos:
+		right := InterpretNode(v.Operand, context)
+		if right.Type == "int" {
+			return &WabbitValue{"int", +right.Value.(int)}
+		} else if right.Type == "float" {
+			return &WabbitValue{"float", +right.Value.(float64)}
+		} else {
+			// we think it's a type error
+			return &WabbitValue{"error", "type error"}
+		}
+	case *model.Not:
+		right := InterpretNode(v.Operand, context)
+		if right.Type == "bool" {
+			return &WabbitValue{"int", !right.Value.(bool)}
+		} else {
+			// we think it's a type error
+			return &WabbitValue{"error", "type error"}
+		}
 	case *model.VarDeclaration:
 		var val *WabbitValue
 		if v.Value != nil {
@@ -332,7 +361,7 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		}
 
 	default:
-		panic(fmt.Sprintf("Can't intepre %v to source", v))
+		panic(fmt.Sprintf("Can't intepre %#v to source", v))
 	}
 
 	return nil

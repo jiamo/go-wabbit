@@ -162,6 +162,8 @@ type Neg struct {
 func (n *Neg) ExpressionNode() {}
 func (n *Neg) Id() int         { return GetNodeInfo(n).Id }
 
+//func (n *Neg) String() int     { return GetNodeInfo(n).Id }
+
 type Pos struct {
 	Operand Expression
 }
