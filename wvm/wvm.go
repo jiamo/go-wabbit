@@ -25,7 +25,7 @@ type WVM struct {
 
 type Instruction struct {
 	opcode string
-	args   []interface{}
+	args   interface{}
 }
 
 func (vm *WVM) run(instructions []Instruction) {
@@ -34,7 +34,7 @@ func (vm *WVM) run(instructions []Instruction) {
 	vm.labels = make(map[string]int)
 	for i, instruction := range instructions {
 		if instruction.opcode == "LABEL" {
-			vm.labels[instruction.args[0].(string)] = i
+			vm.labels[instruction.args.(string)] = i
 		}
 
 	}
@@ -46,10 +46,11 @@ func (vm *WVM) run(instructions []Instruction) {
 		//	args = append(args, vm.get(arg))
 		//}
 		//getattr(vm, op).call(args...)
-		argValues := make([]reflect.Value, len(args))
-		for i, arg := range args {
-			argValues[i] = reflect.ValueOf(arg)
-		}
+		argValues := make([]reflect.Value, 1)
+		//for i, arg := range args {
+		//	argValues[i] = reflect.ValueOf(arg)
+		//}
+		argValues[0] = reflect.ValueOf(args)
 		method := reflect.ValueOf(vm).MethodByName(op)
 		method.Call(argValues)
 	}
@@ -246,7 +247,7 @@ func NewWVMContext() *WVMContext {
 	return &WVMContext{
 		env:   make(map[string]interface{}),
 		scope: "global",
-		code:  make([]interface{}, 0),
+		code:  make([]Instruction, 0),
 	}
 }
 
@@ -295,15 +296,18 @@ func Wvm(program *model.Program) error {
 func InterpretNode(node model.Node, context *WVMContext) string {
 	switch v := node.(type) {
 	case *model.Integer:
-		return &WabbitValue{"int", v.Value}
+		context.code = append(context.code, Instruction{"IPUSH", v.Value})
+		return "int"
 	case *model.Float:
-		return &WabbitValue{"float", v.Value}
+		context.code = append(context.code, Instruction{"FPUSH", v.Value})
+		return "float"
 	case *model.Character:
 		unquoted, err := strconv.Unquote(v.Value)
 		if err != nil {
 			panic(err)
 		}
-		return &WabbitValue{"char", rune(unquoted[0])}
+		context.code = append(context.code, Instruction{"IPUSH", rune(unquoted[0])})
+		return "char"
 	case *model.Name:
 		value, _ := context.Lookup(v.Text) // somethings we may need exist
 		// check value.Value is WabbitVar if success then return  its load
