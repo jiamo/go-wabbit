@@ -688,15 +688,32 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		return "bool"
 	case *model.LogOr:
 		// TODO short eval
+		done_label := context.NewLabel()
+		or_continue_label := context.NewLabel()
+
 		_ = InterpretNode(v.Left, context)
+		context.code = append(context.code, Instruction{"BZ", or_continue_label})
+		context.code = append(context.code, Instruction{"IPUSH", 1})
+		context.code = append(context.code, Instruction{"GOTO", done_label})
+		context.code = append(context.code, Instruction{"LABEL", or_continue_label})
 		_ = InterpretNode(v.Right, context)
-		context.code = append(context.code, Instruction{"OR", nil})
+		context.code = append(context.code, Instruction{"LABEL", done_label})
+		//context.code = append(context.code, Instruction{"OR", nil})
 		return "bool"
+
 	case *model.LogAnd:
+		done_label := context.NewLabel()
+		and_false_label := context.NewLabel()
 		_ = InterpretNode(v.Left, context)
+		context.code = append(context.code, Instruction{"BZ", and_false_label})
 		_ = InterpretNode(v.Right, context)
-		context.code = append(context.code, Instruction{"AND", nil})
-		return "bool"
+		context.code = append(context.code, Instruction{"GOTO", done_label})
+		context.code = append(context.code, Instruction{"LABEL", and_false_label})
+		context.code = append(context.code, Instruction{"IPUSH", 0})
+
+		context.code = append(context.code, Instruction{"LABEL", done_label})
+		return "bool" // no need or and any more
+
 	case *model.Assignment:
 		val := InterpretNode(v.Value, context)
 		// assign the value to the name
@@ -864,16 +881,25 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		// TODO make it as builtin function...
 		name := v.Func.(*model.Name).Text
 		funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
-
+		log.Debugf("name %v", name)
 		if name == "int" {
+			// only float need to cast
 			if argType == "float" {
 				context.code = append(context.code, Instruction{"FTOI", nil})
 			}
+			return "int"
 		}
 		if name == "float" {
-			if argType == "int" {
+			if argType != "float" {
 				context.code = append(context.code, Instruction{"ITOF", nil})
 			}
+			return "float"
+		}
+		if name == "char" {
+			return "char"
+		}
+		if name == "bool" {
+			return "bool"
 		}
 		context.code = append(context.code, Instruction{"CALL", funcVar.Slot})
 		return funcVar.Type
