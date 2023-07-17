@@ -53,7 +53,7 @@ func (vm *WVM) run(instructions []Instruction) {
 		//for i, arg := range args {
 		//	argValues[i] = reflect.ValueOf(arg)
 		//}
-		log.Debugf("method is %v", op)
+		//log.Debugf("method is %v", op)
 		method := reflect.ValueOf(vm).MethodByName(op)
 		if args == nil {
 			//argValues[0] = reflect.ValueOf(nil)
@@ -253,7 +253,7 @@ func (vm *WVM) PRINTB() {
 }
 
 func (vm *WVM) PRINTC() {
-	fmt.Print(rune(vm.IPOP()))
+	fmt.Printf("%c", rune(vm.IPOP()))
 }
 
 func (vm *WVM) FTOI() {
@@ -307,7 +307,7 @@ func (vm *WVM) HALT() {
 }
 
 func (vm *WVM) LABEL(name int) {
-	
+
 }
 
 func (vm *WVM) FSTORE_GLOBAL(slot int) {
@@ -413,7 +413,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		if err != nil {
 			panic(err)
 		}
-		context.code = append(context.code, Instruction{"IPUSH", rune(unquoted[0])})
+		context.code = append(context.code, Instruction{"IPUSH", int(rune(unquoted[0]))})
 		return "char"
 	case *model.Name:
 		log.Debugf("*model.Name %v env %v code %v", v.Text, context.env, context.code)
