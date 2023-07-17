@@ -422,18 +422,14 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		if value.Scope == "global" {
 			if value.Type == "float" {
 				context.code = append(context.code, Instruction{"FLOAD_GLOBAL", value.Slot})
-				//return "int"
 			} else {
 				context.code = append(context.code, Instruction{"ILOAD_GLOBAL", value.Slot})
-				//return "float"
 			}
 		} else if value.Scope == "local" {
 			if value.Type == "float" {
 				context.code = append(context.code, Instruction{"FLOAD_LOCAL", value.Slot})
-				//return "int"
 			} else {
 				context.code = append(context.code, Instruction{"ILOAD_LOCAL", value.Slot})
-				//return "float"
 			}
 		}
 		return value.Type
@@ -512,8 +508,6 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			context.code = append(context.code, Instruction{"IDIV", nil})
 			return "int"
 		} else if left == "float" && right == "float" {
-
-			//return &WabbitValue{"float", left.Value.(float64) / right.Value.(float64)}
 			context.code = append(context.code, Instruction{"FDIV", nil})
 			return "float"
 		} else {
@@ -538,20 +532,10 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		return right
 	case *model.Pos:
 		right := InterpretNode(v.Operand, context)
-		//if right.Type == "int" {
-		//	return &WabbitValue{"int", +right.Value.(int)}
-		//} else if right.Type == "float" {
-		//	return &WabbitValue{"float", +right.Value.(float64)}
-		//} else {
-		//	// we think it's a type error
-		//	return &WabbitValue{"error", "type error"}
-		//}
 		return right
 	case *model.Not:
 		right := InterpretNode(v.Operand, context)
 		if right == "bool" {
-
-			//return &WabbitValue{"int", !right.Value.(bool)}
 			context.code = append(context.code, Instruction{"IPUSH", 1})
 			context.code = append(context.code, Instruction{"XOR", nil})
 		} else {
@@ -589,8 +573,6 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			}
 		}
 		return ""
-		// Var Declaration don't have a type mean there should don't put value on stack
-		// if the statment we push some value one stack. we should return the vartype
 
 	case *model.ConstDeclaration:
 		valtype := InterpretNode(v.Value, context)
@@ -636,7 +618,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", "<="})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+			context.code = append(context.code, Instruction{"ICMP", "<="})
 		} else {
 			panic("type different")
 		}
@@ -652,7 +634,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", ">"})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+			context.code = append(context.code, Instruction{"ICMP", ">"})
 		} else {
 			panic("type different")
 		}
@@ -668,7 +650,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", ">="})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+			context.code = append(context.code, Instruction{"ICMP", ">="})
 		} else {
 			panic("type different")
 		}
@@ -697,9 +679,9 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		} else if left == "float" {
 			context.code = append(context.code, Instruction{"FCMP", "!="})
 		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "1="})
+			context.code = append(context.code, Instruction{"ICMP", "!="})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+			context.code = append(context.code, Instruction{"ICMP", "!="})
 		} else {
 			panic("type different")
 		}
@@ -755,7 +737,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		}
 	case *model.Statements:
 
-		var result string = ""
+		var result string
 		for _, statement := range v.Statements {
 			// do we need pop to keep stack blance?
 			if result == "float" {
@@ -794,7 +776,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		if v.Alternative != nil {
 			context.NewScope(
 				func() {
-					InterpretNode(&v.Consequence, context)
+					InterpretNode(v.Alternative, context)
 					context.code = append(context.code, Instruction{"GOTO", merge_label})
 				},
 			)
@@ -809,8 +791,6 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 	case *model.ContinueStatement:
 		val := context.Lookup("continue") // fake using type as label
 		context.code = append(context.code, Instruction{"GOTO", val.Slot})
-		// we can save break_lable and cotinue_label....like save env
-		// but we can just using the env save the break or
 
 	case *model.ReturnStatement:
 		value := InterpretNode(v.Value, context)
