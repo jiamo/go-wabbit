@@ -1,168 +1,122 @@
-package wvm
+package wasm
 
 import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"reflect"
 	"strconv"
+	"strings"
 	"wabbit-go/common"
 	"wabbit-go/model"
 )
 
-type Frame struct {
-	returnPc  int
-	locals    map[int]interface{}
-	prevFrame *Frame
+var _typemap = map[string]string{
+	"int":   "i32",
+	"float": "f64",
+	"bool":  "i32",
+	"char":  "i32",
 }
 
-type WVM struct {
-	pc      int
-	istack  []int
-	fstack  []float64
-	globals map[int]interface{}
-	labels  map[int]int
-	frame   *Frame
-	running bool
+type Parameter struct {
+	Name string
+	Type string
 }
 
-type Instruction struct {
-	opcode string
-	args   interface{}
+type WasmFunction struct {
+	name       string
+	parameters []Parameter
+	retType    string
+	code       []string
+	locals     []string
 }
 
-func (vm *WVM) run(instructions []Instruction) {
-	vm.pc = 0
-	vm.running = true
-	vm.labels = make(map[int]int)
-
-	// TODO we may need optimse this pass In WvmContext
-	for i, instruction := range instructions {
-		if instruction.opcode == "LABEL" {
-			vm.labels[instruction.args.(int)] = i
-		}
+func (f *WasmFunction) String() string {
+	out := fmt.Sprintf("(func $%s (export \"%s\")\n", f.name, f.name)
+	for _, parm := range f.parameters {
+		out += fmt.Sprintf("(param $%s %s)\n", parm.Name, _typemap[parm.Type])
 	}
-	for vm.running {
-		op := instructions[vm.pc].opcode
-		args := instructions[vm.pc].args
-		vm.pc++
-		//for _, arg := range args {
-		//	args = append(args, vm.get(arg))
-		//}
-		//getattr(vm, op).call(args...)
-		argValues := make([]reflect.Value, 1)
-		//for i, arg := range args {
-		//	argValues[i] = reflect.ValueOf(arg)
-		//}
-		//log.Debugf("method is %v", op)
-		method := reflect.ValueOf(vm).MethodByName(op)
-		if args == nil {
-			//argValues[0] = reflect.ValueOf(nil)
-			method.Call([]reflect.Value{}) // empty array is not about nil
-		} else {
-			argValues[0] = reflect.ValueOf(args)
-			method.Call(argValues)
-		}
+	if f.retType != "" {
+		out += fmt.Sprintf("(result %s)\n", _typemap[f.retType])
+		out += fmt.Sprintf("(local $return %s)\n", _typemap[f.retType])
+	}
+	out += "\n" + strings.Join(f.locals, "\n")
+	out += "\nblock $return\n"
+	out += "\n" + strings.Join(f.code, "\n")
+	out += "\nend\n"
+	if f.retType != "" {
+		out += "local.get $return\n"
+	}
+	out += ")\n"
+	return out
+}
 
+type WabbitWasmModule struct {
+	module   []string
+	env      *common.ChainMap
+	function WasmFunction
+	scope    string
+	nlabels  int
+	haveMain bool
+}
+
+type WASMVar struct {
+	Type  string
+	Scope string
+}
+
+func NewWabbitWasmModule() *WabbitWasmModule {
+	w := &WabbitWasmModule{
+		module: []string{"(module"},
+		env:    common.NewChainMap(),
+		function: WasmFunction{
+			name: "_init",
+		},
+		scope: "global",
+	}
+	w.module = append(w.module, "(import \"env\" \"_printi\" (func $_printi ( param i32 )))")
+	w.module = append(w.module, "(import \"env\" \"_printf\" (func $_printf ( param f64 )))")
+	w.module = append(w.module, "(import \"env\" \"_printb\" (func $_printb ( param i32 )))")
+	w.module = append(w.module, "(import \"env\" \"_printc\" (func $_printc ( param i32 )))")
+
+	return w
+}
+
+func (m *WabbitWasmModule) String() string {
+	return strings.Join(m.module, "\n") + "\n)\n"
+}
+
+func (ctx *WabbitWasmModule) Define(name string, value *WASMVar) {
+	ctx.env.SetValue(name, value)
+}
+
+func (ctx *WabbitWasmModule) Lookup(name string) *WASMVar {
+	v, e := ctx.env.GetValue(name)
+	if e == true {
+		return v.(*WASMVar)
+	} else {
+		return nil
 	}
 }
 
-//func (vm *WVM) get(arg interface{}) interface{} {
-//	switch arg.(type) {
-//	case int:
-//		return arg.(int)
-//	case float64:
-//		return arg.(float64)
-//	case string:
-//		return vm.globals[arg.(string)]
-//	default:
-//		panic("invalid argument type")
-//	}
-//}
-
-func (vm *WVM) IPUSH(value int) {
-	vm.istack = append(vm.istack, value)
+func (ctx *WabbitWasmModule) NewScope(do func()) {
+	oldEnv := ctx.env
+	ctx.env = ctx.env.NewChild()
+	defer func() {
+		ctx.env = oldEnv
+	}()
+	do()
 }
 
-func (vm *WVM) IPOP() int {
-	index := len(vm.istack) - 1
-	// Get the top element of the stack
-	element := vm.istack[index]
-	// Remove the top element of the stack
-	vm.istack = vm.istack[:index]
-	return element
+func (m *WabbitWasmModule) NewLabel() string {
+	m.nlabels++
+	return fmt.Sprintf("label%d", m.nlabels)
 }
 
-func (vm *WVM) IDUP() {
-	vm.istack = append(vm.istack, vm.istack[len(vm.istack)-1])
-}
-func (vm *WVM) FDUP() {
-	vm.fstack = append(vm.fstack, vm.fstack[len(vm.fstack)-1])
-}
-
-func (vm *WVM) IADD() {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	vm.IPUSH(left + right)
-}
-
-func (vm *WVM) FADD() {
-	right := vm.FPOP()
-	left := vm.FPOP()
-	vm.FPUSH(left + right)
-}
-
-func (vm *WVM) ISUB() {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	vm.IPUSH(left - right)
-}
-
-func (vm *WVM) FSUB() {
-	right := vm.FPOP()
-	left := vm.FPOP()
-	vm.FPUSH(left - right)
-}
-
-func (vm *WVM) IMUL() {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	vm.IPUSH(left * right)
-}
-
-func (vm *WVM) FMUL() {
-	right := vm.FPOP()
-	left := vm.FPOP()
-	vm.FPUSH(left * right)
-}
-
-func (vm *WVM) IDIV() {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	vm.IPUSH(left / right)
-}
-
-func (vm *WVM) FDIV() {
-	right := vm.FPOP()
-	left := vm.FPOP()
-	vm.FPUSH(left / right)
-}
-
-func (vm *WVM) AND() {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	vm.IPUSH(left & right)
-}
-
-func (vm *WVM) OR() {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	vm.IPUSH(left | right)
-}
-
-func (vm *WVM) XOR() {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	vm.IPUSH(left ^ right)
+func Wasm(program *model.Program) string {
+	wctx := NewWabbitWasmModule()
+	_ = InterpretNode(program.Model, wctx) // generate is InterpretNode in the same meaning
+	// where
+	wctx.module = append(wctx.module, wctx.function.String())
+	return wctx.String()
 }
 
 func BoolToInt(b bool) int {
@@ -172,272 +126,53 @@ func BoolToInt(b bool) int {
 	return 0
 }
 
-func (vm *WVM) ICMP(op string) {
-	right := vm.IPOP()
-	left := vm.IPOP()
-	switch op {
-	case "<":
-		vm.IPUSH(BoolToInt(left < right))
-	case "<=":
-		vm.IPUSH(BoolToInt(left <= right))
-	case ">":
-		vm.IPUSH(BoolToInt(left > right))
-	case ">=":
-		vm.IPUSH(BoolToInt(left >= right))
-	case "==":
-		vm.IPUSH(BoolToInt(left == right))
-	case "!=":
-		vm.IPUSH(BoolToInt(left != right))
-	}
+func insert(slice []string, value string, position int) []string {
+	// Grow the slice by one element.
+	slice = append(slice, "")
+
+	// Use copy to move the upper part of the slice out of the way and open a hole.
+	copy(slice[position+1:], slice[position:])
+
+	// Insert the new element.
+	slice[position] = value
+
+	return slice
 }
 
-func (vm *WVM) FCMP(op string) {
-	right := vm.FPOP()
-	left := vm.FPOP()
-	switch op {
-	case "<":
-		vm.IPUSH(BoolToInt(left < right))
-	case "<=":
-		vm.IPUSH(BoolToInt(left <= right))
-	case ">":
-		vm.IPUSH(BoolToInt(left > right))
-	case ">=":
-		vm.IPUSH(BoolToInt(left >= right))
-	case "==":
-		vm.IPUSH(BoolToInt(left == right))
-	case "!=":
-		vm.IPUSH(BoolToInt(left != right))
-	}
-}
-
-func (vm *WVM) FPUSH(value float64) {
-	vm.fstack = append(vm.fstack, value)
-}
-
-//func (vm *WVM) ITOF() {
-//	value := vm.IPOP()
-//	vm.FPUSH(float64(value))
-//}
-
-func (vm *WVM) INEG() {
-	vm.IPUSH(-vm.IPOP())
-}
-
-func (vm *WVM) FPOP() float64 {
-	index := len(vm.fstack) - 1
-	// Get the top element of the stack
-	element := vm.fstack[index]
-	// Remove the top element of the stack
-	vm.fstack = vm.fstack[:index]
-	return element
-}
-
-func (vm *WVM) FNEG() {
-	vm.FPUSH(-vm.FPOP())
-}
-
-func (vm *WVM) PRINTI() {
-	fmt.Println(vm.IPOP())
-}
-
-func (vm *WVM) PRINTF() {
-	fmt.Println(vm.FPOP())
-}
-
-func (vm *WVM) PRINTB() {
-	if vm.IPOP() == 0 {
-		fmt.Println("false")
-	} else {
-		fmt.Println("true")
-	}
-}
-
-func (vm *WVM) PRINTC() {
-	fmt.Printf("%c", rune(vm.IPOP()))
-}
-
-func (vm *WVM) FTOI() {
-	vm.IPUSH(int(vm.FPOP()))
-}
-
-func (vm *WVM) ITOF() {
-	vm.FPUSH(float64(vm.IPOP()))
-}
-
-func (vm *WVM) ISTORE_LOCAL(slot int) {
-	vm.frame.locals[slot] = vm.IPOP()
-}
-
-func (vm *WVM) ILOAD_LOCAL(slot int) {
-	vm.IPUSH(vm.frame.locals[slot].(int))
-}
-
-func (vm *WVM) FLOAD_LOCAL(slot int) {
-	vm.FPUSH(vm.frame.locals[slot].(float64))
-}
-
-func (vm *WVM) FSTORE_LOCAL(slot int) {
-	vm.frame.locals[slot] = vm.FPOP()
-}
-
-func (vm *WVM) ISTORE_GLOBAL(slot int) {
-	vm.globals[slot] = vm.IPOP()
-}
-
-func (vm *WVM) ILOAD_GLOBAL(slot int) {
-	vm.IPUSH(vm.globals[slot].(int))
-}
-
-func (vm *WVM) FLOAD_GLOBAL(slot int) {
-	vm.FPUSH(vm.globals[slot].(float64))
-}
-
-func (vm *WVM) GOTO(name int) {
-	vm.pc = vm.labels[name]
-}
-
-func (vm *WVM) BZ(name int) {
-	if vm.IPOP() == 0 {
-		vm.pc = vm.labels[name]
-	}
-}
-
-func (vm *WVM) HALT() {
-	vm.running = false
-}
-
-func (vm *WVM) LABEL(name int) {
-
-}
-
-func (vm *WVM) FSTORE_GLOBAL(slot int) {
-	vm.globals[slot] = vm.FPOP()
-}
-
-func (vm *WVM) CALL(label int) {
-	vm.frame = &Frame{vm.pc, make(map[int]interface{}), vm.frame}
-	vm.pc = vm.labels[label]
-}
-
-func (vm *WVM) RETURN() {
-	vm.pc = vm.frame.returnPc
-	vm.frame = vm.frame.prevFrame
-}
-
-type WVMContext struct {
-	env       *common.ChainMap
-	code      []Instruction
-	nglobals  int
-	nlocals   int
-	nlabels   int
-	scope     string
-	haveMain  bool
-	parentEnv *map[string]interface{}
-}
-
-func NewWVMContext() *WVMContext {
-	return &WVMContext{
-		env:   common.NewChainMap(),
-		scope: "global",
-		code:  make([]Instruction, 0),
-	}
-}
-
-type WVMVar struct {
-	Type  string
-	Scope string
-	Slot  int
-}
-
-func (ctx *WVMContext) Define(name string, value *WVMVar) {
-	ctx.env.SetValue(name, value)
-}
-
-func (ctx *WVMContext) Lookup(name string) *WVMVar {
-	v, e := ctx.env.GetValue(name)
-	if e == true {
-		return v.(*WVMVar)
-	} else {
-		return nil
-	}
-}
-
-func (ctx *WVMContext) NewVariable() (string, int) {
-	if ctx.scope == "global" {
-		ctx.nglobals++
-		return "global", ctx.nglobals - 1
-	} else {
-		ctx.nlocals++
-		return "local", ctx.nlocals - 1
-	}
-}
-
-func (ctx *WVMContext) NewLabel() int {
-	ctx.nlabels++
-	return ctx.nlabels - 1
-}
-
-func (ctx *WVMContext) NewScope(do func()) {
-	oldEnv := ctx.env
-	ctx.env = ctx.env.NewChild()
-	defer func() {
-		ctx.env = oldEnv
-	}()
-	do()
-}
-
-func Wvm(program *model.Program) error {
-	wctx := NewWVMContext()
-	_ = InterpretNode(program.Model, wctx) // generate is InterpretNode in the same meaning
-	wvm := &WVM{
-		globals: make(map[int]interface{}),
-	}
-
-	wctx.code = append(wctx.code, Instruction{"HALT", nil})
-	log.Debug(wctx.code)
-	wvm.run(wctx.code)
-
-	return nil
-}
-
-func InterpretNode(node model.Node, context *WVMContext) string {
+func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 	switch v := node.(type) {
 	case *model.Integer:
-		context.code = append(context.code, Instruction{"IPUSH", v.Value})
+		context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", v.Value))
 		return "int"
 	case *model.Float:
-		context.code = append(context.code, Instruction{"FPUSH", v.Value})
+		context.function.code = append(context.function.code, fmt.Sprintf("f64.const %v", v.Value))
 		return "float"
 	case *model.Character:
 		unquoted, err := strconv.Unquote(v.Value)
 		if err != nil {
 			panic(err)
 		}
-		context.code = append(context.code, Instruction{"IPUSH", int(rune(unquoted[0]))})
+		//context.code = append(context.code, Instruction{"IPUSH", int(rune(unquoted[0]))})
+		context.function.code = append(context.function.code, fmt.Sprintf("f32.const %v", int(rune(unquoted[0]))))
 		return "char"
 	case *model.Name:
-		log.Debugf("*model.Name %v env %v code %v", v.Text, context.env, context.code)
+
 		value := context.Lookup(v.Text) // somethings we may need exist
 		// bool int char using int
 		if value.Scope == "global" {
-			if value.Type == "float" {
-				context.code = append(context.code, Instruction{"FLOAD_GLOBAL", value.Slot})
-			} else {
-				context.code = append(context.code, Instruction{"ILOAD_GLOBAL", value.Slot})
-			}
+			// that why value is simple than wvm
+			context.function.code = append(context.function.code, fmt.Sprintf("global.get ${%v}", v.Text))
+
 		} else if value.Scope == "local" {
-			if value.Type == "float" {
-				context.code = append(context.code, Instruction{"FLOAD_LOCAL", value.Slot})
-			} else {
-				context.code = append(context.code, Instruction{"ILOAD_LOCAL", value.Slot})
-			}
+			context.function.code = append(context.function.code, fmt.Sprintf("local.get ${%v}", v.Text))
 		}
 		return value.Type
 
 	case *model.NameType:
 		return v.Name
 	case *model.NameBool:
-		context.code = append(context.code, Instruction{"IPUSH", BoolToInt(v.Name == "true")})
+		context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", BoolToInt(v.Name == "true")))
+		//context.code = append(context.code, Instruction{"IPUSH", BoolToInt(v.Name == "true")})
 		//return &WabbitValue{Type: "bool", Value: v.Name == "true"}
 		return "bool"
 	case *model.IntegerType:
@@ -452,12 +187,12 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"IADD", nil})
+			context.function.code = append(context.function.code, "i32.add")
 			return "int"
 			//return &WabbitValue{"int", left.Value.(int) + right.Value.(int)}
 		} else if left == "float" && right == "float" {
 			//return &WabbitValue{"float", left.Value.(float64) + right.Value.(float64)}
-			context.code = append(context.code, Instruction{"FADD", nil})
+			context.function.code = append(context.function.code, "f64.add")
 			return "float"
 		} else {
 			// we think it's a type error
@@ -471,11 +206,11 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"IMUL", nil})
+			context.function.code = append(context.function.code, "i32.mul")
 			return "int"
 			//return &WabbitValue{"int", left.Value.(int) * right.Value.(int)}
 		} else if left == "float" && right == "float" {
-			context.code = append(context.code, Instruction{"FMUL", nil})
+			context.function.code = append(context.function.code, "f64.mul")
 			return "float"
 		} else {
 			// we think it's a type error
@@ -488,11 +223,11 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"ISUB", nil})
+			context.function.code = append(context.function.code, "i32.sub")
 			return "int"
 			//return &WabbitValue{"int", left.Value.(int) - right.Value.(int)}
 		} else if left == "float" && right == "float" {
-			context.code = append(context.code, Instruction{"FSUB", nil})
+			context.function.code = append(context.function.code, "f64.mul")
 			return "float"
 		} else {
 			// we think it's a type error
@@ -505,10 +240,10 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"IDIV", nil})
+			context.function.code = append(context.function.code, "i32.div")
 			return "int"
 		} else if left == "float" && right == "float" {
-			context.code = append(context.code, Instruction{"FDIV", nil})
+			context.function.code = append(context.function.code, "f64.div")
 			return "float"
 		} else {
 			// we think it's a type error
@@ -517,13 +252,17 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		return left
 
 	case *model.Neg:
+		pos := len(context.function.code)
 		right := InterpretNode(v.Operand, context)
 		if right == "int" {
 			//return &WabbitValue{"int", -right.Value.(int)}
-			context.code = append(context.code, Instruction{"INEG", nil})
+			//context.function.code = append(context.function.code, "i32.const 0")
+			insert(context.function.code, "i32.const 0", pos)
+			context.function.code = append(context.function.code, "i32.sub")
 		} else if right == "float" {
 			//return &WabbitValue{"float", -right.Value.(float64)}
-			context.code = append(context.code, Instruction{"FNEG", nil})
+			insert(context.function.code, "f64.const 0", pos)
+			context.function.code = append(context.function.code, "f64.sub")
 		} else {
 			// we think it's a type error
 			//return &WabbitValue{"error", "type error"}
@@ -536,8 +275,8 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 	case *model.Not:
 		right := InterpretNode(v.Operand, context)
 		if right == "bool" {
-			context.code = append(context.code, Instruction{"IPUSH", 1})
-			context.code = append(context.code, Instruction{"XOR", nil})
+			context.function.code = append(context.function.code, "i32.const 1")
+			context.function.code = append(context.function.code, "i32.xor")
 		} else {
 			// we think it's a type error
 			panic("type different")
@@ -547,50 +286,51 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		//var val *WVMVar
 		var valtype string
 		if v.Value != nil {
-			valtype = InterpretNode(v.Value, context)
+			valtype = InterpretNode(v.Value, context) // store in stack
 		} else {
 			valtype = v.Type.Type()
-			// the default value init
+		}
+
+		if context.scope == "global" {
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FPUSH", 0.0})
+				context.module = append(context.module, "(global (mut f64) (f64.const 0.0))")
 			} else {
-				context.code = append(context.code, Instruction{"IPUSH", 0})
+				context.module = append(context.module, "(global (mut i32) (i32.const 0))")
+			}
+			if v.Value != nil {
+				context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Name.Text))
+			}
+		} else if context.scope == "local" {
+			if valtype == "float" {
+				context.module = append(context.module, "(local (mut f64) (f64.const 0.0))")
+			} else {
+				context.module = append(context.module, "(local (mut i32) (i32.const 0))")
+			}
+			if v.Value != nil {
+				context.function.code = append(context.function.code, fmt.Sprintf("local.set $%s", v.Name.Text))
 			}
 		}
-		scope, slot := context.NewVariable()
-		context.Define(v.Name.Text, &WVMVar{Type: valtype, Scope: scope, Slot: slot}) // this is for context rember
-		if scope == "global" {
-			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", slot})
-			} else {
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
-			}
-		} else if scope == "local" {
-			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_LOCAL", slot})
-			} else {
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
-			}
-		}
+		context.Define(v.Name.Text, &WASMVar{Type: valtype, Scope: context.scope})
 		return ""
 
 	case *model.ConstDeclaration:
 		valtype := InterpretNode(v.Value, context)
-		scope, slot := context.NewVariable()
-		context.Define(v.Name.Text, &WVMVar{Type: valtype, Scope: scope, Slot: slot}) // this is for context rember
-		if scope == "global" {
+		if context.scope == "global" {
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", slot})
+				context.module = append(context.module, "(global (mut f64) (f64.const 0.0))")
 			} else {
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
+				context.module = append(context.module, "(global (mut i32) (i32.const 0))")
 			}
-		} else if scope == "local" {
+			context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Name.Text))
+		} else if context.scope == "local" {
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_LOCAL", slot})
+				context.module = append(context.module, "(local (mut f64) (f64.const 0.0))")
 			} else {
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
+				context.module = append(context.module, "(local (mut i32) (i32.const 0))")
 			}
+			context.function.code = append(context.function.code, fmt.Sprintf("local.set $%s", v.Name.Text))
 		}
+		context.Define(v.Name.Text, &WASMVar{Type: valtype, Scope: context.scope})
 		return ""
 
 	case *model.Lt:

@@ -12,3 +12,4 @@ service_scan_output
 tmp.go
 tokenize_main
 .go-version
+node_modules
