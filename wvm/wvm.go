@@ -2,6 +2,7 @@ package wvm
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"reflect"
 	"strconv"
 	"wabbit-go/common"
@@ -19,7 +20,7 @@ type WVM struct {
 	istack  []int
 	fstack  []float64
 	globals map[int]interface{}
-	labels  map[string]int
+	labels  map[int]int
 	frame   *Frame
 	running bool
 }
@@ -32,12 +33,13 @@ type Instruction struct {
 func (vm *WVM) run(instructions []Instruction) {
 	vm.pc = 0
 	vm.running = true
-	vm.labels = make(map[string]int)
+	vm.labels = make(map[int]int)
+
+	// TODO we may need optimse this pass In WvmContext
 	for i, instruction := range instructions {
 		if instruction.opcode == "LABEL" {
-			vm.labels[instruction.args.(string)] = i
+			vm.labels[instruction.args.(int)] = i
 		}
-
 	}
 	for vm.running {
 		op := instructions[vm.pc].opcode
@@ -51,9 +53,16 @@ func (vm *WVM) run(instructions []Instruction) {
 		//for i, arg := range args {
 		//	argValues[i] = reflect.ValueOf(arg)
 		//}
-		argValues[0] = reflect.ValueOf(args)
+		log.Debugf("method is %v", op)
 		method := reflect.ValueOf(vm).MethodByName(op)
-		method.Call(argValues)
+		if args == nil {
+			//argValues[0] = reflect.ValueOf(nil)
+			method.Call([]reflect.Value{}) // empty array is not about nil
+		} else {
+			argValues[0] = reflect.ValueOf(args)
+			method.Call(argValues)
+		}
+
 	}
 }
 
@@ -96,10 +105,22 @@ func (vm *WVM) IADD() {
 	vm.IPUSH(left + right)
 }
 
+func (vm *WVM) FADD() {
+	right := vm.FPOP()
+	left := vm.FPOP()
+	vm.FPUSH(left + right)
+}
+
 func (vm *WVM) ISUB() {
 	right := vm.IPOP()
 	left := vm.IPOP()
 	vm.IPUSH(left - right)
+}
+
+func (vm *WVM) FSUB() {
+	right := vm.FPOP()
+	left := vm.FPOP()
+	vm.FPUSH(left - right)
 }
 
 func (vm *WVM) IMUL() {
@@ -108,10 +129,22 @@ func (vm *WVM) IMUL() {
 	vm.IPUSH(left * right)
 }
 
+func (vm *WVM) FMUL() {
+	right := vm.FPOP()
+	left := vm.FPOP()
+	vm.FPUSH(left * right)
+}
+
 func (vm *WVM) IDIV() {
 	right := vm.IPOP()
 	left := vm.IPOP()
 	vm.IPUSH(left / right)
+}
+
+func (vm *WVM) FDIV() {
+	right := vm.FPOP()
+	left := vm.FPOP()
+	vm.FPUSH(left / right)
 }
 
 func (vm *WVM) AND() {
@@ -191,7 +224,7 @@ func (vm *WVM) INEG() {
 }
 
 func (vm *WVM) FPOP() float64 {
-	index := len(vm.istack) - 1
+	index := len(vm.fstack) - 1
 	// Get the top element of the stack
 	element := vm.fstack[index]
 	// Remove the top element of the stack
@@ -259,21 +292,29 @@ func (vm *WVM) FLOAD_GLOBAL(slot int) {
 	vm.FPUSH(vm.globals[slot].(float64))
 }
 
-func (vm *WVM) GOTO(name string) {
+func (vm *WVM) GOTO(name int) {
 	vm.pc = vm.labels[name]
 }
 
-func (vm *WVM) BZ(name string) {
+func (vm *WVM) BZ(name int) {
 	if vm.IPOP() == 0 {
 		vm.pc = vm.labels[name]
 	}
+}
+
+func (vm *WVM) HALT() {
+	vm.running = false
+}
+
+func (vm *WVM) LABEL(name int) {
+	
 }
 
 func (vm *WVM) FSTORE_GLOBAL(slot int) {
 	vm.globals[slot] = vm.FPOP()
 }
 
-func (vm *WVM) CALL(label string) {
+func (vm *WVM) CALL(label int) {
 	vm.frame = &Frame{vm.pc, make(map[int]interface{}), vm.frame}
 	vm.pc = vm.labels[label]
 }
@@ -314,7 +355,7 @@ func (ctx *WVMContext) Define(name string, value *WVMVar) {
 
 func (ctx *WVMContext) Lookup(name string) *WVMVar {
 	v, e := ctx.env.GetValue(name)
-	if e != true {
+	if e == true {
 		return v.(*WVMVar)
 	} else {
 		return nil
@@ -351,7 +392,11 @@ func Wvm(program *model.Program) error {
 	wvm := &WVM{
 		globals: make(map[int]interface{}),
 	}
+
+	wctx.code = append(wctx.code, Instruction{"HALT", nil})
+	log.Debug(wctx.code)
 	wvm.run(wctx.code)
+
 	return nil
 }
 
@@ -371,38 +416,34 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		context.code = append(context.code, Instruction{"IPUSH", rune(unquoted[0])})
 		return "char"
 	case *model.Name:
+		log.Debugf("*model.Name %v env %v code %v", v.Text, context.env, context.code)
 		value := context.Lookup(v.Text) // somethings we may need exist
-		// check value.Value is WabbitVar if success then return  its load
-		// else return value
-		//value_var, ok := value.Value.(*WabbitVar)
-		////fmt.Println("hello world", "value ", value, " ", value_var, " ", v.Text)
-		//if ok {
-		//	return value_var.Load()
-		//} else {
-		//	return value
-		//}
+		// bool int char using int
 		if value.Scope == "global" {
-			if value.Type == "int" {
-				context.code = append(context.code, Instruction{"ILOAD_GLOBAL", value.Slot})
-				return "int"
-			} else if value.Type == "float" {
+			if value.Type == "float" {
 				context.code = append(context.code, Instruction{"FLOAD_GLOBAL", value.Slot})
-				return "float"
+				//return "int"
+			} else {
+				context.code = append(context.code, Instruction{"ILOAD_GLOBAL", value.Slot})
+				//return "float"
 			}
 		} else if value.Scope == "local" {
-			if value.Type == "int" {
-				context.code = append(context.code, Instruction{"ILOAD_LOCAL", value.Slot})
-				return "int"
-			} else if value.Type == "float" {
+			if value.Type == "float" {
 				context.code = append(context.code, Instruction{"FLOAD_LOCAL", value.Slot})
-				return "float"
+				//return "int"
+			} else {
+				context.code = append(context.code, Instruction{"ILOAD_LOCAL", value.Slot})
+				//return "float"
 			}
 		}
+		return value.Type
+
 	case *model.NameType:
 		return v.Name
 	case *model.NameBool:
 		context.code = append(context.code, Instruction{"IPUSH", BoolToInt(v.Name == "true")})
 		//return &WabbitValue{Type: "bool", Value: v.Name == "true"}
+		return "bool"
 	case *model.IntegerType:
 		return "int"
 		//return &WabbitValue{Type: "type", Value: "int"}
@@ -427,6 +468,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			panic("type different")
 			//return &WabbitValue{"error", "type error"}
 		}
+		return left
 	case *model.Mul:
 		left := InterpretNode(v.Left, context)
 		right := InterpretNode(v.Right, context)
@@ -438,11 +480,12 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			//return &WabbitValue{"int", left.Value.(int) * right.Value.(int)}
 		} else if left == "float" && right == "float" {
 			context.code = append(context.code, Instruction{"FMUL", nil})
-			return "int"
+			return "float"
 		} else {
 			// we think it's a type error
 			panic("type different")
 		}
+		return left
 	case *model.Sub:
 		left := InterpretNode(v.Left, context)
 		right := InterpretNode(v.Right, context)
@@ -459,23 +502,25 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			// we think it's a type error
 			panic("type different")
 		}
+		return left
 	case *model.Div:
 		left := InterpretNode(v.Left, context)
 		right := InterpretNode(v.Right, context)
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"FSUB", nil})
+			context.code = append(context.code, Instruction{"IDIV", nil})
 			return "int"
 		} else if left == "float" && right == "float" {
 
 			//return &WabbitValue{"float", left.Value.(float64) / right.Value.(float64)}
-			context.code = append(context.code, Instruction{"FSUB", nil})
+			context.code = append(context.code, Instruction{"FDIV", nil})
 			return "float"
 		} else {
 			// we think it's a type error
 			panic("type different")
 		}
+		return left
 
 	case *model.Neg:
 		right := InterpretNode(v.Operand, context)
@@ -490,6 +535,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			//return &WabbitValue{"error", "type error"}
 			panic("type different")
 		}
+		return right
 	case *model.Pos:
 		right := InterpretNode(v.Operand, context)
 		//if right.Type == "int" {
@@ -512,54 +558,58 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			// we think it's a type error
 			panic("type different")
 		}
+		return right
 	case *model.VarDeclaration:
 		//var val *WVMVar
 		var valtype string
 		if v.Value != nil {
 			valtype = InterpretNode(v.Value, context)
 		} else {
+			valtype = v.Type.Type()
 			// the default value init
-			if valtype == "int" {
-				context.code = append(context.code, Instruction{"IPUSH", 0})
-			} else if valtype == "float" {
+			if valtype == "float" {
 				context.code = append(context.code, Instruction{"FPUSH", 0.0})
+			} else {
+				context.code = append(context.code, Instruction{"IPUSH", 0})
 			}
 		}
 		scope, slot := context.NewVariable()
 		context.Define(v.Name.Text, &WVMVar{Type: valtype, Scope: scope, Slot: slot}) // this is for context rember
 		if scope == "global" {
-			if valtype == "int" {
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
-			} else if valtype == "float" {
+			if valtype == "float" {
 				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", slot})
+			} else {
+				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
 			}
 		} else if scope == "local" {
-			if valtype == "int" {
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
-			} else if valtype == "float" {
+			if valtype == "float" {
 				context.code = append(context.code, Instruction{"FSTORE_LOCAL", slot})
+			} else {
+				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
 			}
 		}
-		return "" // no return value
+		return ""
+		// Var Declaration don't have a type mean there should don't put value on stack
+		// if the statment we push some value one stack. we should return the vartype
 
 	case *model.ConstDeclaration:
 		valtype := InterpretNode(v.Value, context)
 		scope, slot := context.NewVariable()
 		context.Define(v.Name.Text, &WVMVar{Type: valtype, Scope: scope, Slot: slot}) // this is for context rember
 		if scope == "global" {
-			if valtype == "int" {
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
-			} else if valtype == "float" {
+			if valtype == "float" {
 				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", slot})
+			} else {
+				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
 			}
 		} else if scope == "local" {
-			if valtype == "int" {
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
-			} else if valtype == "float" {
+			if valtype == "float" {
 				context.code = append(context.code, Instruction{"FSTORE_LOCAL", slot})
+			} else {
+				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
 			}
 		}
-		return ""
+		return "bool"
 
 	case *model.Lt:
 		left := InterpretNode(v.Left, context)
@@ -574,7 +624,7 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		} else {
 			panic("type differnt")
 		}
-		return left
+		return "bool"
 	case *model.Le:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
@@ -585,10 +635,12 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			context.code = append(context.code, Instruction{"FCMP", "<="})
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", "<="})
+		} else if left == "bool" {
+			context.code = append(context.code, Instruction{"ICMP", "=="})
 		} else {
 			panic("type different")
 		}
-		return left
+		return "bool"
 	case *model.Gt:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
@@ -599,10 +651,12 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			context.code = append(context.code, Instruction{"FCMP", ">"})
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", ">"})
+		} else if left == "bool" {
+			context.code = append(context.code, Instruction{"ICMP", "=="})
 		} else {
 			panic("type different")
 		}
-		return left
+		return "bool"
 	case *model.Ge:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
@@ -613,24 +667,27 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			context.code = append(context.code, Instruction{"FCMP", ">="})
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", ">="})
+		} else if left == "bool" {
+			context.code = append(context.code, Instruction{"ICMP", "=="})
 		} else {
 			panic("type different")
 		}
-		return left
+		return "bool"
 	case *model.Eq:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
 			context.code = append(context.code, Instruction{"ICMP", "=="})
 		} else if left == "float" {
 			context.code = append(context.code, Instruction{"FCMP", "=="})
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", "=="})
+		} else if left == "bool" {
+			context.code = append(context.code, Instruction{"ICMP", "=="})
 		} else {
-			panic("type different")
+			panic("type different") // we can just using else For simple
 		}
-		return left
+		return "bool"
 	case *model.Ne:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
@@ -641,39 +698,41 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 			context.code = append(context.code, Instruction{"FCMP", "!="})
 		} else if left == "char" {
 			context.code = append(context.code, Instruction{"ICMP", "1="})
+		} else if left == "bool" {
+			context.code = append(context.code, Instruction{"ICMP", "=="})
 		} else {
 			panic("type different")
 		}
-		return left
+		return "bool"
 	case *model.LogOr:
 		// TODO short eval
-		left := InterpretNode(v.Left, context)
+		_ = InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		context.code = append(context.code, Instruction{"OR", nil})
-		return left
+		return "bool"
 	case *model.LogAnd:
-		left := InterpretNode(v.Left, context)
+		_ = InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		context.code = append(context.code, Instruction{"AND", nil})
-		return left
+		return "bool"
 	case *model.Assignment:
 		val := InterpretNode(v.Value, context)
 		// assign the value to the name
 		wvmvar := context.Lookup(v.Location.(*model.Name).Text)
 		if wvmvar.Scope == "global" {
 			if wvmvar.Type == "float" {
-				context.code = append(context.code, Instruction{"FDUP", ""})
+				context.code = append(context.code, Instruction{"FDUP", nil})
 				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", wvmvar.Slot})
 			} else {
-				context.code = append(context.code, Instruction{"IDUP", ""})
+				context.code = append(context.code, Instruction{"IDUP", nil})
 				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", wvmvar.Slot})
 			}
 		} else {
 			if wvmvar.Type == "float" {
-				context.code = append(context.code, Instruction{"FDUP", ""})
+				context.code = append(context.code, Instruction{"FDUP", nil})
 				context.code = append(context.code, Instruction{"FSTORE_LOCAL", wvmvar.Slot})
 			} else {
-				context.code = append(context.code, Instruction{"IDUP", ""})
+				context.code = append(context.code, Instruction{"IDUP", nil})
 				context.code = append(context.code, Instruction{"ISTORE_LOCAL", wvmvar.Slot})
 			}
 		}
@@ -691,13 +750,14 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		case "float":
 			context.code = append(context.code, Instruction{"PRINTF", nil})
 		default:
+			log.Debugf("%v:%v", context.code, value)
 			panic("wrong type")
 		}
 	case *model.Statements:
 
 		var result string = ""
 		for _, statement := range v.Statements {
-			// do we need pop to keep stack blance
+			// do we need pop to keep stack blance?
 			if result == "float" {
 				context.code = append(context.code, Instruction{"FPOP", nil})
 			} else if result == "int" {

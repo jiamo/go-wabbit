@@ -1,6 +1,7 @@
 package common
 
 import (
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"sync"
 )
@@ -47,4 +48,9 @@ func (cm *ChainMap) SetValue(key, value interface{}) {
 
 func (cm *ChainMap) NewChild() *ChainMap {
 	return &ChainMap{parent: cm}
+}
+
+func (cm *ChainMap) String() string {
+	// interate cm.m
+	return fmt.Sprintf("%v", cm.m)
 }
