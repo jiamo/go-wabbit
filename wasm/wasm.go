@@ -23,7 +23,7 @@ type Parameter struct {
 
 type WasmFunction struct {
 	name       string
-	parameters []Parameter
+	parameters []model.Parameter
 	retType    string
 	code       []string
 	locals     []string
@@ -32,7 +32,7 @@ type WasmFunction struct {
 func (f *WasmFunction) String() string {
 	out := fmt.Sprintf("(func $%s (export \"%s\")\n", f.name, f.name)
 	for _, parm := range f.parameters {
-		out += fmt.Sprintf("(param $%s %s)\n", parm.Name, _typemap[parm.Type])
+		out += fmt.Sprintf("(param $%s %s)\n", parm.Name, _typemap[parm.Type.Type()])
 	}
 	if f.retType != "" {
 		out += fmt.Sprintf("(result %s)\n", _typemap[f.retType])
@@ -68,7 +68,7 @@ func NewWabbitWasmModule() *WabbitWasmModule {
 		module: []string{"(module"},
 		env:    common.NewChainMap(),
 		function: WasmFunction{
-			name: "_init",
+			name: "main",
 		},
 		scope: "global",
 	}
@@ -127,15 +127,7 @@ func BoolToInt(b bool) int {
 }
 
 func insert(slice []string, value string, position int) []string {
-	// Grow the slice by one element.
-	slice = append(slice, "")
-
-	// Use copy to move the upper part of the slice out of the way and open a hole.
-	copy(slice[position+1:], slice[position:])
-
-	// Insert the new element.
-	slice[position] = value
-
+	slice = append(slice[:position], append([]string{value}, slice[position:]...)...)
 	return slice
 }
 
@@ -156,15 +148,11 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		context.function.code = append(context.function.code, fmt.Sprintf("f32.const %v", int(rune(unquoted[0]))))
 		return "char"
 	case *model.Name:
-
-		value := context.Lookup(v.Text) // somethings we may need exist
-		// bool int char using int
+		value := context.Lookup(v.Text)
 		if value.Scope == "global" {
-			// that why value is simple than wvm
-			context.function.code = append(context.function.code, fmt.Sprintf("global.get ${%v}", v.Text))
-
+			context.function.code = append(context.function.code, fmt.Sprintf("global.get $%s", v.Text))
 		} else if value.Scope == "local" {
-			context.function.code = append(context.function.code, fmt.Sprintf("local.get ${%v}", v.Text))
+			context.function.code = append(context.function.code, fmt.Sprintf("local.get $%s", v.Text))
 		}
 		return value.Type
 
@@ -172,8 +160,6 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		return v.Name
 	case *model.NameBool:
 		context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", BoolToInt(v.Name == "true")))
-		//context.code = append(context.code, Instruction{"IPUSH", BoolToInt(v.Name == "true")})
-		//return &WabbitValue{Type: "bool", Value: v.Name == "true"}
 		return "bool"
 	case *model.IntegerType:
 		return "int"
@@ -227,7 +213,7 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 			return "int"
 			//return &WabbitValue{"int", left.Value.(int) - right.Value.(int)}
 		} else if left == "float" && right == "float" {
-			context.function.code = append(context.function.code, "f64.mul")
+			context.function.code = append(context.function.code, "f64.sub")
 			return "float"
 		} else {
 			// we think it's a type error
@@ -240,7 +226,7 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.function.code = append(context.function.code, "i32.div")
+			context.function.code = append(context.function.code, "i32.div_s")
 			return "int"
 		} else if left == "float" && right == "float" {
 			context.function.code = append(context.function.code, "f64.div")
@@ -255,13 +241,11 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		pos := len(context.function.code)
 		right := InterpretNode(v.Operand, context)
 		if right == "int" {
-			//return &WabbitValue{"int", -right.Value.(int)}
-			//context.function.code = append(context.function.code, "i32.const 0")
-			insert(context.function.code, "i32.const 0", pos)
+			context.function.code = insert(context.function.code, "i32.const 0", pos)
 			context.function.code = append(context.function.code, "i32.sub")
 		} else if right == "float" {
 			//return &WabbitValue{"float", -right.Value.(float64)}
-			insert(context.function.code, "f64.const 0", pos)
+			context.function.code = insert(context.function.code, "f64.const 0", pos)
 			context.function.code = append(context.function.code, "f64.sub")
 		} else {
 			// we think it's a type error
@@ -293,18 +277,18 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 
 		if context.scope == "global" {
 			if valtype == "float" {
-				context.module = append(context.module, "(global (mut f64) (f64.const 0.0))")
+				context.module = append(context.module, fmt.Sprintf("(global $%s (mut f64) (f64.const 0.0))", v.Name.Text))
 			} else {
-				context.module = append(context.module, "(global (mut i32) (i32.const 0))")
+				context.module = append(context.module, fmt.Sprintf("(global $%s (mut i32) (i32.const 0))", v.Name.Text))
 			}
 			if v.Value != nil {
 				context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Name.Text))
 			}
 		} else if context.scope == "local" {
 			if valtype == "float" {
-				context.module = append(context.module, "(local (mut f64) (f64.const 0.0))")
+				context.module = append(context.module, fmt.Sprintf("(local $%s (mut f64) (f64.const 0.0))", v.Name.Text))
 			} else {
-				context.module = append(context.module, "(local (mut i32) (i32.const 0))")
+				context.module = append(context.module, fmt.Sprintf("(local $%s (mut i32) (i32.const 0))", v.Name.Text))
 			}
 			if v.Value != nil {
 				context.function.code = append(context.function.code, fmt.Sprintf("local.set $%s", v.Name.Text))
@@ -317,16 +301,16 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		valtype := InterpretNode(v.Value, context)
 		if context.scope == "global" {
 			if valtype == "float" {
-				context.module = append(context.module, "(global (mut f64) (f64.const 0.0))")
+				context.module = append(context.module, fmt.Sprintf("(global $%s (mut f64) (f64.const 0.0))", v.Name.Text))
 			} else {
-				context.module = append(context.module, "(global (mut i32) (i32.const 0))")
+				context.module = append(context.module, fmt.Sprintf("(global $%s (mut i32) (i32.const 0))", v.Name.Text))
 			}
 			context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Name.Text))
 		} else if context.scope == "local" {
 			if valtype == "float" {
-				context.module = append(context.module, "(local (mut f64) (f64.const 0.0))")
+				context.module = append(context.module, fmt.Sprintf("(local $%s (mut f64) (f64.const 0.0))", v.Name.Text))
 			} else {
-				context.module = append(context.module, "(local (mut i32) (i32.const 0))")
+				context.module = append(context.module, fmt.Sprintf("(local $%s (mut i32) (i32.const 0))", v.Name.Text))
 			}
 			context.function.code = append(context.function.code, fmt.Sprintf("local.set $%s", v.Name.Text))
 		}
@@ -336,144 +320,107 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 	case *model.Lt:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
-		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", "<"})
-		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "<"})
-		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "<"})
+		if left == "float" {
+			context.function.code = append(context.function.code, "f64.lt")
 		} else {
-			panic("type differnt")
+			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
+			context.function.code = append(context.function.code, "i32.lt_s")
 		}
 		return "bool"
 	case *model.Le:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
-		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", "<="})
-		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "<="})
-		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "<="})
-		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "<="})
+		if left == "float" {
+			context.function.code = append(context.function.code, "f64.le")
 		} else {
-			panic("type different")
+			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
+			context.function.code = append(context.function.code, "i32.le_s")
 		}
 		return "bool"
 	case *model.Gt:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
-		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", ">"})
-		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", ">"})
-		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", ">"})
-		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", ">"})
+		if left == "float" {
+			context.function.code = append(context.function.code, "f64.gt")
 		} else {
-			panic("type different")
+			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
+			context.function.code = append(context.function.code, "i32.gt_s")
 		}
 		return "bool"
 	case *model.Ge:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
-		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", ">="})
-		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", ">="})
-		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", ">="})
-		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", ">="})
+		if left == "float" {
+			context.function.code = append(context.function.code, "f64.ge")
 		} else {
-			panic("type different")
+			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
+			context.function.code = append(context.function.code, "i32.ge_s")
 		}
 		return "bool"
 	case *model.Eq:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
-		if left == "int" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
-		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "=="})
-		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
-		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+		if left == "float" {
+			context.function.code = append(context.function.code, "f64.eq")
 		} else {
-			panic("type different") // we can just using else For simple
+			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
+			context.function.code = append(context.function.code, "i32.eq")
 		}
 		return "bool"
 	case *model.Ne:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
-		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", "!="})
-		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "!="})
-		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "!="})
-		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "!="})
+		if left == "float" {
+			context.function.code = append(context.function.code, "f64.ne")
 		} else {
-			panic("type different")
+			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
+			context.function.code = append(context.function.code, "i32.ne")
 		}
 		return "bool"
 	case *model.LogOr:
 		// TODO short eval
-		done_label := context.NewLabel()
-		or_continue_label := context.NewLabel()
+		begin := context.NewLabel()
+		context.function.code = append(context.function.code, fmt.Sprintf("block $%s (result i32)", begin))
 
+		or_block := context.NewLabel()
+		context.function.code = append(context.function.code, fmt.Sprintf("block $%s", or_block))
 		_ = InterpretNode(v.Left, context)
-		context.code = append(context.code, Instruction{"BZ", or_continue_label})
-		context.code = append(context.code, Instruction{"IPUSH", 1})
-		context.code = append(context.code, Instruction{"GOTO", done_label})
-		context.code = append(context.code, Instruction{"LABEL", or_continue_label})
+		context.function.code = append(context.function.code, "br_if $%s", or_block)
 		_ = InterpretNode(v.Right, context)
-		context.code = append(context.code, Instruction{"LABEL", done_label})
-		//context.code = append(context.code, Instruction{"OR", nil})
+		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, "end")
+		context.function.code = append(context.function.code, "i32.const 1")
+		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, "end")
 		return "bool"
 
 	case *model.LogAnd:
-		done_label := context.NewLabel()
-		and_false_label := context.NewLabel()
-		_ = InterpretNode(v.Left, context)
-		context.code = append(context.code, Instruction{"BZ", and_false_label})
-		_ = InterpretNode(v.Right, context)
-		context.code = append(context.code, Instruction{"GOTO", done_label})
-		context.code = append(context.code, Instruction{"LABEL", and_false_label})
-		context.code = append(context.code, Instruction{"IPUSH", 0})
+		begin := context.NewLabel()
+		context.function.code = append(context.function.code, fmt.Sprintf("block $%s (result i32)", begin))
 
-		context.code = append(context.code, Instruction{"LABEL", done_label})
+		and_block := context.NewLabel()
+		context.function.code = append(context.function.code, fmt.Sprintf("block $%s", and_block))
+		_ = InterpretNode(v.Left, context)
+		context.function.code = append(context.function.code, "i32.const 1")
+		context.function.code = append(context.function.code, "i32.xor")
+		context.function.code = append(context.function.code, "br_if $%s", and_block)
+		_ = InterpretNode(v.Right, context)
+		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, "end")
+		context.function.code = append(context.function.code, "i32.const 0")
+		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, "end")
 		return "bool" // no need or and any more
 
 	case *model.Assignment:
 		val := InterpretNode(v.Value, context)
 		// assign the value to the name
-		wvmvar := context.Lookup(v.Location.(*model.Name).Text)
-		if wvmvar.Scope == "global" {
-			if wvmvar.Type == "float" {
-				context.code = append(context.code, Instruction{"FDUP", nil})
-				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", wvmvar.Slot})
-			} else {
-				context.code = append(context.code, Instruction{"IDUP", nil})
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", wvmvar.Slot})
-			}
+		wasmvar := context.Lookup(v.Location.(*model.Name).Text)
+		if wasmvar.Scope == "global" {
+			context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Location.(*model.Name).Text))
+			context.function.code = append(context.function.code, fmt.Sprintf("global.get $%s", v.Location.(*model.Name).Text))
 		} else {
-			if wvmvar.Type == "float" {
-				context.code = append(context.code, Instruction{"FDUP", nil})
-				context.code = append(context.code, Instruction{"FSTORE_LOCAL", wvmvar.Slot})
-			} else {
-				context.code = append(context.code, Instruction{"IDUP", nil})
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", wvmvar.Slot})
-			}
+			context.function.code = append(context.function.code, fmt.Sprintf("local.tee $%s", v.Location.(*model.Name).Text))
 		}
 		return val
 
@@ -481,15 +428,14 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		value := InterpretNode(v.Value, context)
 		switch value {
 		case "char":
-			context.code = append(context.code, Instruction{"PRINTC", nil})
+			context.function.code = append(context.function.code, "call $_printc")
 		case "bool":
-			context.code = append(context.code, Instruction{"PRINTB", nil})
+			context.function.code = append(context.function.code, "call $_printb")
 		case "int":
-			context.code = append(context.code, Instruction{"PRINTI", nil})
+			context.function.code = append(context.function.code, "call $_printi")
 		case "float":
-			context.code = append(context.code, Instruction{"PRINTF", nil})
+			context.function.code = append(context.function.code, "call $_printf")
 		default:
-			log.Debugf("%v:%v", context.code, value)
 			panic("wrong type")
 		}
 	case *model.Statements:
@@ -497,10 +443,8 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		var result string
 		for _, statement := range v.Statements {
 			// do we need pop to keep stack blance?
-			if result == "float" {
-				context.code = append(context.code, Instruction{"FPOP", nil})
-			} else if result == "int" {
-				context.code = append(context.code, Instruction{"IPOP", nil})
+			if result != "" {
+				context.function.code = append(context.function.code, "drop")
 			}
 			result = InterpretNode(statement, context)
 			// need check break return too
@@ -509,101 +453,86 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		return result
 
 	case *model.ExpressionAsStatement:
-		return InterpretNode(v.Expression, context)
+		InterpretNode(v.Expression, context)
+		context.function.code = append(context.function.code, "drop")
 
 	case *model.Grouping:
 		return InterpretNode(v.Expression, context)
 
 	case *model.IfStatement:
-		then_label := context.NewLabel()
-		else_label := context.NewLabel()
-		merge_label := context.NewLabel()
+
 		InterpretNode(v.Test, context)
-		context.code = append(context.code, Instruction{"BZ", else_label})
-		context.code = append(context.code, Instruction{"GOTO", then_label})
-		context.code = append(context.code, Instruction{"LABEL", then_label})
+		context.function.code = append(context.function.code, "if")
 
 		context.NewScope(
 			func() {
 				InterpretNode(&v.Consequence, context)
-				context.code = append(context.code, Instruction{"GOTO", merge_label})
-				context.code = append(context.code, Instruction{"LABEL", else_label})
 			},
 		)
 		if v.Alternative != nil {
+			context.function.code = append(context.function.code, "else")
 			context.NewScope(
 				func() {
 					InterpretNode(v.Alternative, context)
-					context.code = append(context.code, Instruction{"GOTO", merge_label})
 				},
 			)
 		}
-		context.code = append(context.code, Instruction{"GOTO", merge_label})
-		context.code = append(context.code, Instruction{"LABEL", merge_label})
+		context.function.code = append(context.function.code, "end")
 
 	case *model.BreakStatement:
 		// we need scope for level break
 		val := context.Lookup("break") // fake using type as label
-		context.code = append(context.code, Instruction{"GOTO", val.Slot})
+		context.function.code = append(context.function.code, "br $%s", val.Scope)
 	case *model.ContinueStatement:
 		val := context.Lookup("continue") // fake using type as label
-		context.code = append(context.code, Instruction{"GOTO", val.Slot})
+		context.function.code = append(context.function.code, "br $%s", val.Scope)
 
 	case *model.ReturnStatement:
 		value := InterpretNode(v.Value, context)
-		context.code = append(context.code, Instruction{"RETURN", nil})
+		context.function.code = append(context.function.code, "return")
 		return value
 
 	case *model.WhileStatement:
 		test_label := context.NewLabel()
-		body_label := context.NewLabel()
 		exit_label := context.NewLabel()
 
-		context.code = append(context.code, Instruction{"GOTO", test_label})
-		context.code = append(context.code, Instruction{"LABEL", test_label})
+		context.function.code = append(context.function.code, fmt.Sprintf("block $%s", exit_label))
+		context.function.code = append(context.function.code, fmt.Sprintf("loop $%s", test_label))
 		InterpretNode(v.Test, context)
-		context.code = append(context.code, Instruction{"BZ", exit_label})
-		context.code = append(context.code, Instruction{"GOTO", body_label})
-		context.code = append(context.code, Instruction{"LABEL", body_label})
+		context.function.code = append(context.function.code, "i32.const 1")
+		context.function.code = append(context.function.code, "i32.xor")
+		context.function.code = append(context.function.code, fmt.Sprintf("br_if $%s", exit_label))
 		context.NewScope(func() {
-			context.Define("break", &WVMVar{"", "", exit_label})
-			context.Define("continue", &WVMVar{"", "", test_label})
+			context.Define("break", &WASMVar{"", exit_label}) // we only fake using scope..
+			context.Define("continue", &WASMVar{"", test_label})
 			InterpretNode(&v.Body, context)
-			context.code = append(context.code, Instruction{"GOTO", test_label})
+			context.function.code = append(context.function.code, "end")
 
 		})
-		context.code = append(context.code, Instruction{"LABEL", exit_label})
+		context.function.code = append(context.function.code, "end")
 
 	case *model.FunctionDeclaration:
 		// we should check the function name is not defined
 		// we can keep function into another position // that's what I am doing in 2022
 		// and put function in the end....
 
-		start_label := context.NewLabel()
-		end_label := context.NewLabel()
-		// we don't put function
-
-		context.code = append(context.code, Instruction{"GOTO", end_label})
-		context.code = append(context.code, Instruction{"LABEL", start_label})
-		context.Define(v.Name.Text, &WVMVar{v.ReturnType.Type(), "", start_label}) //
+		oldfuc := context.function
+		context.function = WasmFunction{
+			name:       v.Name.Text,
+			parameters: v.Parameters,
+			retType:    v.ReturnType.Type(),
+		}
+		context.Define(v.Name.Text, &WASMVar{"func", v.ReturnType.Type()}) //
 		context.NewScope(func() {
 			context.scope = "local"
 			for _, param := range v.Parameters {
-				scope, slot := context.NewVariable()
-				context.Define(param.Name.Text, &WVMVar{param.Type.Type(), scope, slot})
-			}
-			for i := len(v.Parameters) - 1; i >= 0; i-- {
-				val := context.Lookup(v.Parameters[i].Name.Text)
-				if val.Type == "float" {
-					context.code = append(context.code, Instruction{"FSTORE_LOCAL", val.Slot})
-				} else if val.Type == "int" {
-					context.code = append(context.code, Instruction{"ISTORE_LOCAL", val.Slot})
-				}
+				context.Define(param.Name.Text, &WASMVar{param.Type.Type(), "local"})
 			}
 			InterpretNode(&v.Body, context)
 		})
-		context.code = append(context.code, Instruction{"LABEL", end_label})
+		context.module = append(context.module, context.function.String())
 		context.scope = "global"
+		context.function = oldfuc
 		if v.Name.Text == "main" {
 			context.haveMain = true
 		}
@@ -617,21 +546,19 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 			argType = InterpretNode(arg, context) // arg eval in current context
 		}
 		//
-		//savedContext = funtionClosure.Value.Context
-		// TODO make it as builtin function...
 		name := v.Func.(*model.Name).Text
-		funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
+		//funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
 		log.Debugf("name %v", name)
 		if name == "int" {
 			// only float need to cast
 			if argType == "float" {
-				context.code = append(context.code, Instruction{"FTOI", nil})
+				context.function.code = append(context.function.code, "i32.trunc_s/f64")
 			}
 			return "int"
 		}
 		if name == "float" {
 			if argType != "float" {
-				context.code = append(context.code, Instruction{"ITOF", nil})
+				context.function.code = append(context.function.code, "f64.convert_s/i32")
 			}
 			return "float"
 		}
@@ -641,8 +568,9 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		if name == "bool" {
 			return "bool"
 		}
-		context.code = append(context.code, Instruction{"CALL", funcVar.Slot})
-		return funcVar.Type
+		context.function.code = append(context.function.code, fmt.Sprintf("call $%s", name))
+		val := context.Lookup(name)
+		return val.Type
 		// custom function and it should be....
 
 	case *model.CompoundExpression:
