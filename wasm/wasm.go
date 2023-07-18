@@ -106,9 +106,16 @@ func (ctx *WabbitWasmModule) NewScope(do func()) {
 	do()
 }
 
-func (m *WabbitWasmModule) NewLabel() string {
+func (m *WabbitWasmModule) NewLabel(name ...string) string {
+	newID := m.nlabels
 	m.nlabels++
-	return fmt.Sprintf("label%d", m.nlabels)
+	if name == nil {
+		return fmt.Sprintf(".%d", newID)
+	} else {
+		ls := strings.Split(name[0], ".")
+		return ls[0] + "." + strconv.Itoa(newID)
+	}
+
 }
 
 func Wasm(program *model.Program) string {
@@ -379,36 +386,36 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		return "bool"
 	case *model.LogOr:
 		// TODO short eval
-		begin := context.NewLabel()
+		begin := context.NewLabel("begin")
 		context.function.code = append(context.function.code, fmt.Sprintf("block $%s (result i32)", begin))
 
-		or_block := context.NewLabel()
+		or_block := context.NewLabel("or_block")
 		context.function.code = append(context.function.code, fmt.Sprintf("block $%s", or_block))
 		_ = InterpretNode(v.Left, context)
-		context.function.code = append(context.function.code, "br_if $%s", or_block)
+		context.function.code = append(context.function.code, fmt.Sprintf("br_if $%s", or_block))
 		_ = InterpretNode(v.Right, context)
-		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
 		context.function.code = append(context.function.code, "end")
 		context.function.code = append(context.function.code, "i32.const 1")
-		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
 		context.function.code = append(context.function.code, "end")
 		return "bool"
 
 	case *model.LogAnd:
-		begin := context.NewLabel()
+		begin := context.NewLabel("begin")
 		context.function.code = append(context.function.code, fmt.Sprintf("block $%s (result i32)", begin))
 
-		and_block := context.NewLabel()
+		and_block := context.NewLabel("and_block")
 		context.function.code = append(context.function.code, fmt.Sprintf("block $%s", and_block))
 		_ = InterpretNode(v.Left, context)
 		context.function.code = append(context.function.code, "i32.const 1")
 		context.function.code = append(context.function.code, "i32.xor")
-		context.function.code = append(context.function.code, "br_if $%s", and_block)
+		context.function.code = append(context.function.code, fmt.Sprintf("br_if $%s", and_block))
 		_ = InterpretNode(v.Right, context)
-		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
 		context.function.code = append(context.function.code, "end")
 		context.function.code = append(context.function.code, "i32.const 0")
-		context.function.code = append(context.function.code, "br $%s", begin)
+		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
 		context.function.code = append(context.function.code, "end")
 		return "bool" // no need or and any more
 
