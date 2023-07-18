@@ -163,17 +163,17 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		}
 		return value.Type
 
-	case *model.NameType:
-		return v.Name
+	//case *model.NameType:
+	//	return v.Name
 	case *model.NameBool:
 		context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", BoolToInt(v.Name == "true")))
 		return "bool"
-	case *model.IntegerType:
-		return "int"
-		//return &WabbitValue{Type: "type", Value: "int"}
-	case *model.FloatType:
-		//return &WabbitValue{Type: "type", Value: "float"}
-		return "float"
+	//case *model.IntegerType:
+	//	return "int"
+	//return &WabbitValue{Type: "type", Value: "int"}
+	//case *model.FloatType:
+	//	//return &WabbitValue{Type: "type", Value: "float"}
+	//	return "float"
 	case *model.Add:
 		left := InterpretNode(v.Left, context)
 		right := InterpretNode(v.Right, context)

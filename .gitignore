@@ -14,3 +14,6 @@ tokenize_main
 .go-version
 node_modules
 *.wat
+*.out
+out.ll
+*.wasm

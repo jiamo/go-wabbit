@@ -2,170 +2,194 @@ package main
 
 import (
 	"fmt"
-	"wabbit-go/model"
+	log "github.com/sirupsen/logrus"
+	"os"
+	"wabbit-go/interpreter"
+	"wabbit-go/parser"
 )
-import "wabbit-go/interpreter"
 
 func main() {
-	modelA := &model.Add{
-		&model.Integer{2},
-		&model.Add{
-			&model.Integer{2},
-			&model.Integer{4}}}
-
-	println("helloworld")
-	fmt.Println(interpreter.InterpretProgram(modelA))
-
-	//////////////////////
-
-	interpreter.InterpretProgram(
-		&model.PrintStatement{&model.Integer{2}})
-
-	p2 := &model.Statements{
-		[]model.Statement{
-			&model.ConstDeclaration{model.Name{"pi"}, nil, &model.Float{3.14159}},
-			&model.ConstDeclaration{model.Name{"tau"}, nil, &model.Mul{&model.Float{2.0}, &model.Name{"pi"}}},
-			&model.VarDeclaration{model.Name{"radius"}, nil, &model.Float{4.0}},
-			&model.VarDeclaration{model.Name{"perimeter"}, &model.NameType{"float"}, nil},
-			&model.ExpressionAsStatement{&model.Assignment{&model.Name{"perimeter"}, &model.Mul{&model.Name{"tau"}, &model.Name{"radius"}}}},
-			&model.PrintStatement{&model.Name{"perimeter"}},
-		},
+	if len(os.Args) != 2 {
+		fmt.Println("Usage: ./tokenizer filename")
+		os.Exit(1)
 	}
-	println(model.NodeAsSource(p2, model.NewContext()))
-	interpreter.InterpretProgram(p2)
-	//
-	println(model.NodeAsSource(
-		&model.PrintStatement{&model.Eq{&model.Integer{2}, &model.Integer{2}}},
-		model.NewContext()))
-	interpreter.InterpretProgram(
-		&model.PrintStatement{&model.Eq{&model.Integer{2}, &model.Integer{2}}},
-	)
-
-	pp0 := &model.PrintStatement{
-		&model.LogOr{&model.NameBool{"true"},
-			&model.Grouping{
-				&model.Eq{
-					&model.Div{&model.Integer{1}, &model.Integer{2}},
-					&model.Integer{2},
-				}}}}
-	println(model.NodeAsSource(
-		pp0,
-		model.NewContext()))
-
-	interpreter.InterpretProgram(pp0)
-	//
-	pp1 := &model.Statements{
-		[]model.Statement{
-			&model.ConstDeclaration{model.Name{"a"}, &model.NameType{"int"}, &model.Integer{2}},
-			&model.ConstDeclaration{model.Name{"b"}, &model.NameType{"int"}, &model.Integer{3}},
-			&model.VarDeclaration{model.Name{"minvar"}, &model.NameType{"int"}, nil},
-			&model.IfStatement{
-				&model.Lt{&model.Name{"a"}, &model.Name{"b"}},
-				model.Statements{[]model.Statement{
-					&model.ExpressionAsStatement{&model.Assignment{&model.Name{"minvar"}, &model.Name{"a"}}},
-				}},
-				&model.Statements{[]model.Statement{
-					&model.ExpressionAsStatement{&model.Assignment{&model.Name{"minvar"}, &model.Name{"b"}}},
-				}},
-			},
-			&model.PrintStatement{&model.Name{"minvar"}},
-		},
+	log.SetLevel(log.DebugLevel)
+	filename := os.Args[1]
+	prog, err := parser.HandleFile(filename)
+	if err != nil {
+		log.Errorf("wrong program %v", err)
 	}
-	println(model.NodeAsSource(
-		pp1,
-		model.NewContext(),
-	))
-	interpreter.InterpretProgram(pp1)
-
-	p3 := &model.Statements{
-		[]model.Statement{
-			&model.VarDeclaration{model.Name{"n"}, &model.IntegerType{}, &model.Integer{2}},
-			&model.WhileStatement{
-				&model.NameBool{"true"},
-				model.Statements{[]model.Statement{
-					&model.IfStatement{
-						&model.Eq{&model.Name{"n"}, &model.Integer{2}},
-						model.Statements{
-							[]model.Statement{
-								&model.PrintStatement{&model.Name{"n"}},
-								&model.BreakStatement{},
-							}},
-						&model.Statements{
-							[]model.Statement{
-								&model.ExpressionAsStatement{&model.Assignment{&model.Name{"n"}, &model.Add{&model.Name{"n"}, &model.Integer{'1'}}}},
-								&model.ContinueStatement{},
-							}},
-					},
-					&model.ExpressionAsStatement{&model.Assignment{&model.Name{"n"}, &model.Sub{&model.Name{"n"}, &model.Integer{1}}}}},
-				}},
-			&model.PrintStatement{&model.Name{"n"}}},
-	}
-	println(model.NodeAsSource(p3, model.NewContext()))
-	interpreter.InterpretProgram(p3)
-
-	//p4 := &model.Statements{
-	//	[]model.Statement{
-	//		&model.VarDeclaration{model.Name{"x"}, nil, &model.Integer{37}},
-	//		&model.VarDeclaration{model.Name{"y"}, nil, &model.Integer{42}},
-	//		&model.ExpressionAsStatement{
-	//			&model.Assignment{
-	//				&model.Name{"x"},
-	//				&model.CompoundExpression{
-	//					[]model.Statement{
-	//						&model.VarDeclaration{model.Name{"t"}, nil, &model.Name{"y"}},
-	//						&model.ExpressionAsStatement{&model.Assignment{&model.Name{"y"}, &model.Name{"x"}}},
-	//						&model.ExpressionAsStatement{&model.Name{"t"}},
-	//					},
-	//				},
-	//			},
-	//		},
-	//	},
-	//}
-	//println(model.NodeAsSource(p4, model.NewContext()))
-	//
-	p5 := &model.Statements{
-		[]model.Statement{
-			&model.FunctionDeclaration{
-				Name: model.Name{"add"},
-				Parameters: []model.Parameter{
-					model.Parameter{
-						Name: model.Name{"x"},
-						Type: &model.IntegerType{},
-					},
-					model.Parameter{
-						Name: model.Name{"y"},
-						Type: &model.IntegerType{},
-					},
-				},
-				ReturnType: &model.IntegerType{},
-				Body: model.Statements{
-					[]model.Statement{
-						&model.ReturnStatement{
-							Value: &model.Add{
-								Left:  &model.Name{"x"},
-								Right: &model.Name{"y"},
-							},
-						},
-					},
-				},
-			},
-			&model.VarDeclaration{
-				Name: model.Name{"result"},
-				Type: nil,
-				Value: &model.FunctionApplication{
-					&model.Name{"add"},
-					[]model.Expression{
-						&model.Integer{2},
-						&model.Integer{3},
-					},
-				},
-			},
-			&model.PrintStatement{
-				Value: &model.Name{"result"},
-			},
-		},
-	}
-
-	println(model.NodeAsSource(p5, model.NewContext()))
-	interpreter.InterpretProgram(p5)
+	interpreter.InterpretProgram(prog.Model)
 }
+
+//package main
+//
+//import (
+//	"fmt"
+//	"wabbit-go/model"
+//)
+//import "wabbit-go/interpreter"
+//
+//func main() {
+//	modelA := &model.Add{
+//		&model.Integer{2},
+//		&model.Add{
+//			&model.Integer{2},
+//			&model.Integer{4}}}
+//
+//	println("helloworld")
+//	fmt.Println(interpreter.InterpretProgram(modelA))
+//
+//	//////////////////////
+//
+//	interpreter.InterpretProgram(
+//		&model.PrintStatement{&model.Integer{2}})
+//
+//	p2 := &model.Statements{
+//		[]model.Statement{
+//			&model.ConstDeclaration{model.Name{"pi"}, nil, &model.Float{3.14159}},
+//			&model.ConstDeclaration{model.Name{"tau"}, nil, &model.Mul{&model.Float{2.0}, &model.Name{"pi"}}},
+//			&model.VarDeclaration{model.Name{"radius"}, nil, &model.Float{4.0}},
+//			&model.VarDeclaration{model.Name{"perimeter"}, &model.NameType{"float"}, nil},
+//			&model.ExpressionAsStatement{&model.Assignment{&model.Name{"perimeter"}, &model.Mul{&model.Name{"tau"}, &model.Name{"radius"}}}},
+//			&model.PrintStatement{&model.Name{"perimeter"}},
+//		},
+//	}
+//	println(model.NodeAsSource(p2, model.NewContext()))
+//	interpreter.InterpretProgram(p2)
+//	//
+//	println(model.NodeAsSource(
+//		&model.PrintStatement{&model.Eq{&model.Integer{2}, &model.Integer{2}}},
+//		model.NewContext()))
+//	interpreter.InterpretProgram(
+//		&model.PrintStatement{&model.Eq{&model.Integer{2}, &model.Integer{2}}},
+//	)
+//
+//	pp0 := &model.PrintStatement{
+//		&model.LogOr{&model.NameBool{"true"},
+//			&model.Grouping{
+//				&model.Eq{
+//					&model.Div{&model.Integer{1}, &model.Integer{2}},
+//					&model.Integer{2},
+//				}}}}
+//	println(model.NodeAsSource(
+//		pp0,
+//		model.NewContext()))
+//
+//	interpreter.InterpretProgram(pp0)
+//	//
+//	pp1 := &model.Statements{
+//		[]model.Statement{
+//			&model.ConstDeclaration{model.Name{"a"}, &model.NameType{"int"}, &model.Integer{2}},
+//			&model.ConstDeclaration{model.Name{"b"}, &model.NameType{"int"}, &model.Integer{3}},
+//			&model.VarDeclaration{model.Name{"minvar"}, &model.NameType{"int"}, nil},
+//			&model.IfStatement{
+//				&model.Lt{&model.Name{"a"}, &model.Name{"b"}},
+//				model.Statements{[]model.Statement{
+//					&model.ExpressionAsStatement{&model.Assignment{&model.Name{"minvar"}, &model.Name{"a"}}},
+//				}},
+//				&model.Statements{[]model.Statement{
+//					&model.ExpressionAsStatement{&model.Assignment{&model.Name{"minvar"}, &model.Name{"b"}}},
+//				}},
+//			},
+//			&model.PrintStatement{&model.Name{"minvar"}},
+//		},
+//	}
+//	println(model.NodeAsSource(
+//		pp1,
+//		model.NewContext(),
+//	))
+//	interpreter.InterpretProgram(pp1)
+//
+//	p3 := &model.Statements{
+//		[]model.Statement{
+//			&model.VarDeclaration{model.Name{"n"}, &model.IntegerType{}, &model.Integer{2}},
+//			&model.WhileStatement{
+//				&model.NameBool{"true"},
+//				model.Statements{[]model.Statement{
+//					&model.IfStatement{
+//						&model.Eq{&model.Name{"n"}, &model.Integer{2}},
+//						model.Statements{
+//							[]model.Statement{
+//								&model.PrintStatement{&model.Name{"n"}},
+//								&model.BreakStatement{},
+//							}},
+//						&model.Statements{
+//							[]model.Statement{
+//								&model.ExpressionAsStatement{&model.Assignment{&model.Name{"n"}, &model.Add{&model.Name{"n"}, &model.Integer{'1'}}}},
+//								&model.ContinueStatement{},
+//							}},
+//					},
+//					&model.ExpressionAsStatement{&model.Assignment{&model.Name{"n"}, &model.Sub{&model.Name{"n"}, &model.Integer{1}}}}},
+//				}},
+//			&model.PrintStatement{&model.Name{"n"}}},
+//	}
+//	println(model.NodeAsSource(p3, model.NewContext()))
+//	interpreter.InterpretProgram(p3)
+//
+//	//p4 := &model.Statements{
+//	//	[]model.Statement{
+//	//		&model.VarDeclaration{model.Name{"x"}, nil, &model.Integer{37}},
+//	//		&model.VarDeclaration{model.Name{"y"}, nil, &model.Integer{42}},
+//	//		&model.ExpressionAsStatement{
+//	//			&model.Assignment{
+//	//				&model.Name{"x"},
+//	//				&model.CompoundExpression{
+//	//					[]model.Statement{
+//	//						&model.VarDeclaration{model.Name{"t"}, nil, &model.Name{"y"}},
+//	//						&model.ExpressionAsStatement{&model.Assignment{&model.Name{"y"}, &model.Name{"x"}}},
+//	//						&model.ExpressionAsStatement{&model.Name{"t"}},
+//	//					},
+//	//				},
+//	//			},
+//	//		},
+//	//	},
+//	//}
+//	//println(model.NodeAsSource(p4, model.NewContext()))
+//	//
+//	p5 := &model.Statements{
+//		[]model.Statement{
+//			&model.FunctionDeclaration{
+//				Name: model.Name{"add"},
+//				Parameters: []model.Parameter{
+//					model.Parameter{
+//						Name: model.Name{"x"},
+//						Type: &model.IntegerType{},
+//					},
+//					model.Parameter{
+//						Name: model.Name{"y"},
+//						Type: &model.IntegerType{},
+//					},
+//				},
+//				ReturnType: &model.IntegerType{},
+//				Body: model.Statements{
+//					[]model.Statement{
+//						&model.ReturnStatement{
+//							Value: &model.Add{
+//								Left:  &model.Name{"x"},
+//								Right: &model.Name{"y"},
+//							},
+//						},
+//					},
+//				},
+//			},
+//			&model.VarDeclaration{
+//				Name: model.Name{"result"},
+//				Type: nil,
+//				Value: &model.FunctionApplication{
+//					&model.Name{"add"},
+//					[]model.Expression{
+//						&model.Integer{2},
+//						&model.Integer{3},
+//					},
+//				},
+//			},
+//			&model.PrintStatement{
+//				Value: &model.Name{"result"},
+//			},
+//		},
+//	}
+//
+//	println(model.NodeAsSource(p5, model.NewContext()))
+//	interpreter.InterpretProgram(p5)
+//}
