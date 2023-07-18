@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"math"
 	"strconv"
 	"strings"
@@ -13,6 +14,11 @@ type LValue struct {
 	WType  string
 	LValue string
 	Scope  string
+}
+
+type Parameter struct {
+	PType  string
+	PValue string
 }
 
 func NewLValue(wtype string, lvalue string, scope string) *LValue {
@@ -48,9 +54,9 @@ var _zero = map[string]string{
 
 func (f *Function) String() string {
 	parms := []string{}
-	for _, parm := range f.parameters {
-		parms = append(parms, fmt.Sprintf("$%s %%\"%s\")", _typemap[parm.Type.Type()],
-			f.locals[parm.Name.Text])) // TODO.....
+	for index, parm := range f.parameters {
+		argname := fmt.Sprintf("%%\".%d\"", index+1)
+		parms = append(parms, fmt.Sprintf("%s %s", _typemap[parm.Type.Type()], argname))
 	}
 	parmstr := strings.Join(parms, ", ")
 	out := fmt.Sprintf("define %s @\"%s\"(%s)\n{\n", _typemap[f.retType], f.name, parmstr)
@@ -133,10 +139,6 @@ func LLVM(program *model.Program) string {
 	context.function.code = append(context.function.code, "entry:")
 	_ = InterpretNode(program.Model, context) // generate is InterpretNode in the same meaning
 	context.function.code = append(context.function.code, "ret i32 0")
-	//context.function.code = append(context.function.code, "}")
-
-	// new function was put in global d
-	// this function is Main
 	begin := "; ModuleID = \"wabbit\"\ntarget triple = \"unknown-unknown-unknown\"\ntarget datalayout = \"\"\n\n"
 	return begin + context.function.String() + "\n\n" +
 		strings.Join(context.globals, "\n\n") + "\n\n"
@@ -179,20 +181,22 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		//context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", int(rune(unquoted[0]))))
 		return &LValue{"char", fmt.Sprintf("%v", int(rune(unquoted[0]))), ""}
 	case *model.Name:
-		// may be the scope is not Important...!
-		// %".4" = load double, double* @"xmin"
-		//value := context.Lookup(v.Text)
-		//if value.Scope == "global" {
-		//	context.function.code = append(context.function.code, fmt.Sprintf("global.get $%s", v.Text))
-		//} else if value.Scope == "local" {
-		//	context.function.code = append(context.function.code, fmt.Sprintf("local.get $%s", v.Text))
+		//func square(x int) int {
+		//    return x*x;  x is not declared
 		//}
-		// just load it
 		value := context.Lookup(v.Text)
 		r := context.NewRegister()
 		ltype := _typemap[value.WType]
+		//if context.scope == "global" {
+		//	context.function.code = append(context.function.code,
+		//		fmt.Sprintf("%s = load %s, %s* %s", r, ltype, ltype, value.LValue))
+		//} else {
+		//	context.function.code = append(context.function.code,
+		//		fmt.Sprintf("%s = load %s, %s* %%\"%s\"", r, ltype, ltype, v.Text))
+		//}
 		context.function.code = append(context.function.code,
-			fmt.Sprintf("%s = load %s, %s* @\"%s\"", r, ltype, ltype, v.Text))
+			fmt.Sprintf("%s = load %s, %s* %s", r, ltype, ltype, value.LValue))
+		// local is % global is @
 		return &LValue{value.WType, r, ""}
 
 	//case *model.NameType:
@@ -326,20 +330,31 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 						_typemap[valtype], val.LValue, _typemap[valtype], v.Name.Text))
 				//context.N++
 			}
+			//context.Define(v.Name.Text, &LValue{valtype,
+			//	fmt.Sprintf("@\"%s\"", v.Name.Text), context.scope}) // TODO
 			context.Define(v.Name.Text, &LValue{valtype,
 				fmt.Sprintf("@\"%s\"", v.Name.Text), context.scope}) // TODO
 
 		} else if context.scope == "local" {
 			// local using function
 			// need first alloc
-			if valtype == "float" {
+			context.function.code = append(context.function.code,
+				fmt.Sprintf("%%\"%s\" = alloca %s", v.Name.Text, _typemap[valtype]))
+			if val != nil {
 				context.function.code = append(context.function.code,
-					fmt.Sprintf("store double %s, double* @\"%s\"", val.LValue, v.Name.Text))
+					fmt.Sprintf("store %s %s, %s* %%\"%s\"",
+						_typemap[valtype], val.LValue, _typemap[valtype], v.Name.Text))
+				//context.N++
 			} else {
 				context.function.code = append(context.function.code,
-					fmt.Sprintf("store i32 %s, i32* @\"%s\"", val.LValue, v.Name.Text))
+					fmt.Sprintf("store %s %s, %s* @\"%s\"",
+						_typemap[valtype], _zero[valtype], _typemap[valtype], v.Name.Text))
 			}
+			context.Define(v.Name.Text, &LValue{valtype,
+				fmt.Sprintf("%%\"%s\"", v.Name.Text), context.scope}) // TODO
+
 		}
+
 	case *model.ConstDeclaration:
 		//var val *WVMVar
 		context.N++
@@ -366,18 +381,22 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		} else if context.scope == "local" {
 			// local using function
 			// need first alloc
-			if valtype == "float" {
+			context.function.code = append(context.function.code,
+				fmt.Sprintf("%%\"%s\" = alloca %s", v.Name.Text, _typemap[valtype]))
+			if val != nil {
 				context.function.code = append(context.function.code,
-					fmt.Sprintf("store double %s, double* @\"%s\"", val.LValue, v.Name.Text))
+					fmt.Sprintf("store %s %s, %s* %%\"%s\"",
+						_typemap[valtype], val.LValue, _typemap[valtype], v.Name.Text))
+				//context.N++
 			} else {
 				context.function.code = append(context.function.code,
-					fmt.Sprintf("store i32 %s, i32* @\"%s\"", val.LValue, v.Name.Text))
+					fmt.Sprintf("store %s %s, %s* @\"%s\"",
+						_typemap[valtype], _zero[valtype], _typemap[valtype], v.Name.Text))
 			}
+			context.Define(v.Name.Text, &LValue{valtype,
+				fmt.Sprintf("%%\"%s\"", v.Name.Text), context.scope}) // TO
 		}
-		// the local
-		// context.Define(v.Name.Text, &LValue{valtype, val,context.scope})
 
-		return nil
 	//
 	//case *model.ConstDeclaration:
 	//	valtype := InterpretNode(v.Value, context)
@@ -473,12 +492,27 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		return &LValue{"bool", val, context.scope}
 	case *model.LogOr:
 		// TODO short eval
-		left := InterpretNode(v.Left, context)
-		right := InterpretNode(v.Right, context)
-		val := context.NewRegister()
-		ltype := _typemap[left.WType]
-		context.function.code = append(context.function.code, fmt.Sprintf("%s = and %s %s, %s", val, ltype, left.LValue, right.LValue))
-		return &LValue{"bool", val, context.scope}
+		// logOr like If
+		consequence := context.NewLabel()
+		alternative := context.NewLabel()
+		merge := context.NewLabel()
+		var ret *LValue
+		ret = InterpretNode(v.Left, context)
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("br i1 %s, label %%%s, label %%%s", ret.LValue, consequence, alternative))
+		context.function.code = append(context.function.code, fmt.Sprintf("%s:", consequence))
+		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", merge))
+
+		context.NewScope(func() {
+			context.function.code = append(context.function.code, fmt.Sprintf("%s:", alternative))
+			ret = InterpretNode(v.Right, context)
+			context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", merge))
+		})
+
+		context.function.code = append(context.function.code, fmt.Sprintf("%s:", merge))
+
+		return &LValue{"bool", ret.LValue, context.scope}
+
 		//begin := context.NewLabel("begin")
 		//context.function.code = append(context.function.code, fmt.Sprintf("block $%s (result i32)", begin))
 		//
@@ -525,12 +559,9 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		// assign the value to the name
 		ltype := _typemap[val.WType]
 		decl := context.Lookup(v.Location.(*model.Name).Text)
-		if decl.Scope == "global" {
-			context.function.code = append(context.function.code,
-				fmt.Sprintf("store %s %s, %s* %s", ltype, val.LValue, ltype, decl.LValue))
-		} else {
-			context.function.code = append(context.function.code, fmt.Sprintf("local.tee $%s", v.Location.(*model.Name).Text))
-		}
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("store %s %s, %s* %s", ltype, val.LValue, ltype, decl.LValue))
+
 		return val
 
 	case *model.PrintStatement:
@@ -554,21 +585,22 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 			panic("wrong type")
 		}
 	case *model.Statements:
-
-		//var result string
+		// llvm no need drop....
+		var result *LValue
 		for _, statement := range v.Statements {
 			// do we need pop to keep stack blance?
 			//if result != "" {
 			//	context.function.code = append(context.function.code, "drop")
 			//}
-			InterpretNode(statement, context)
+			result = InterpretNode(statement, context)
 			// need check break return too
 
 		}
-		//return result
+		return result
 
 	case *model.ExpressionAsStatement:
-		InterpretNode(v.Expression, context)
+		result := InterpretNode(v.Expression, context)
+		return result
 		// why need drop... . Don't need drop I think
 		//context.function.code = append(context.function.code, "drop")
 		//return val
@@ -598,14 +630,15 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 	case *model.BreakStatement:
 		// we need scope for level break
 		val := context.Lookup("break") // fake using type as label
-		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", val.Scope))
+		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", val.LValue))
 	case *model.ContinueStatement:
 		val := context.Lookup("continue") // fake using type as label
-		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", val.Scope))
+		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", val.LValue))
 
 	case *model.ReturnStatement:
 		value := InterpretNode(v.Value, context)
-		context.function.code = append(context.function.code, "return")
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("ret %s %s", _typemap[value.WType], value.LValue))
 		return value
 	//
 	case *model.WhileStatement:
@@ -618,10 +651,17 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		test := InterpretNode(v.Test, context)
 		context.function.code = append(context.function.code,
 			fmt.Sprintf("br i1 %s, label %%%s, label %%%s", test.LValue, body_label, exit_label))
-		context.function.code = append(context.function.code, fmt.Sprintf("%s:", body_label))
-		InterpretNode(&v.Body, context)
-		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", test_label))
+
+		context.NewScope(func() {
+			context.Define("break", &LValue{"", exit_label, context.scope}) // we only fake using scope..
+			context.Define("continue", &LValue{"", test_label, context.scope})
+			context.function.code = append(context.function.code, fmt.Sprintf("%s:", body_label))
+			InterpretNode(&v.Body, context)
+			context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", test_label))
+		})
+
 		context.function.code = append(context.function.code, fmt.Sprintf("%s:", exit_label))
+
 	//	test_label := context.NewLabel()
 	//	exit_label := context.NewLabel()
 	//
@@ -641,86 +681,105 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 	//	})
 	//	context.function.code = append(context.function.code, "end")
 	//
-	//case *model.FunctionDeclaration:
-	//	// we should check the function name is not defined
-	//	// we can keep function into another position // that's what I am doing in 2022
-	//	// and put function in the end....
+	case *model.FunctionDeclaration:
+		oldfunc := context.function
+		context.function = Function{
+			name:       v.Name.Text,
+			parameters: v.Parameters,
+			retType:    v.ReturnType.Type(),
+		}
+		context.Define(v.Name.Text, &LValue{
+			WType:  v.ReturnType.Type(),
+			LValue: "", // TODO
+			Scope:  context.scope,
+		})
+		context.NewScope(func() {
+			context.scope = "local"
+			for index, param := range v.Parameters {
+				context.N++
+				context.Define(param.Name.Text, &LValue{
+					WType:  param.Type.Type(),
+					LValue: fmt.Sprintf("%%\"%s\"", param.Name.Text), // TODO
+					Scope:  context.scope,
+				})
+				pname := fmt.Sprintf("%%\"%s\"", param.Name.Text)
+				argName := fmt.Sprintf("%%\".%d\"", index+1)
+				ptype := _typemap[param.Type.Type()]
+				// need define
+
+				context.function.code = append(context.function.code,
+					fmt.Sprintf("%s  = alloca %s", pname, ptype))
+				context.function.code = append(context.function.code,
+					fmt.Sprintf("store %s %s, %s* %s ", ptype, argName, ptype, pname))
+
+			}
+			InterpretNode(&v.Body, context)
+			//context.function.code = append(context.function.code,
+			//	fmt.Sprintf("store %s %s, %s* %s ", ptype, argName, ptype, pname))
+		})
+		log.Debug("begining function", context.function.String())
+		context.globals = append(context.globals, context.function.String())
+		context.function = oldfunc
+		context.scope = "global"
+
 	//
-	//	oldfuc := context.function
-	//	context.function = WasmFunction{
-	//		name:       v.Name.Text,
-	//		parameters: v.Parameters,
-	//		retType:    v.ReturnType.Type(),
-	//	}
-	//	context.Define(v.Name.Text, &WASMVar{v.ReturnType.Type(), ""}) //
-	//	context.NewScope(func() {
-	//		context.scope = "local"
-	//		for _, param := range v.Parameters {
-	//			context.Define(param.Name.Text, &WASMVar{param.Type.Type(), "local"})
-	//		}
-	//		InterpretNode(&v.Body, context)
-	//	})
-	//	context.module = append(context.module, context.function.String())
-	//	context.function = oldfuc
-	//	context.scope = "global"
-	//
-	//	if v.Name.Text == "main" {
-	//		context.haveMain = true
-	//	}
-	//
-	//case *model.FunctionApplication:
-	//	argType := "int"
-	//	//value := InterpretNode(v.Func, context) // while lookup
-	//	for _, arg := range v.Arguments {
-	//		argType = InterpretNode(arg, context) // arg eval in current context
-	//	}
-	//	//
-	//	name := v.Func.(*model.Name).Text
-	//	//funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
-	//	log.Debugf("name %v", name)
-	//	if name == "int" {
-	//		// only float need to cast
-	//		if argType == "float" {
-	//			context.function.code = append(context.function.code, "i32.trunc_f64_s")
-	//		}
-	//		return "int"
-	//	}
-	//	if name == "float" {
-	//		if argType != "float" {
-	//			context.function.code = append(context.function.code, "f64.convert_i32_s")
-	//		}
-	//		return "float"
-	//	}
-	//	if name == "char" {
-	//		return "char"
-	//	}
-	//	if name == "bool" {
-	//		return "bool"
-	//	}
-	//	context.function.code = append(context.function.code, fmt.Sprintf("call $%s", name))
+	case *model.FunctionApplication:
+		//	argType := "int"
+		//	//value := InterpretNode(v.Func, context) // while lookup
+		//	//
+		//	name := v.Func.(*model.Name).Text
+		//	//funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
+		//	log.Debugf("name %v", name)
+		//	if name == "int" {
+		//		// only float need to cast
+		//		if argType == "float" {
+		//			context.function.code = append(context.function.code, "i32.trunc_f64_s")
+		//		}
+		//		return "int"
+		//	}
+		//	if name == "float" {
+		//		if argType != "float" {
+		//			context.function.code = append(context.function.code, "f64.convert_i32_s")
+		//		}
+		//		return "float"
+		//	}
+		//	if name == "char" {
+		//		return "char"
+		//	}
+		//	if name == "bool" {
+		//		return "bool"
+		//	}
+		var result = context.NewRegister()
+		var argValues []*LValue
+		var argValuesStr []string
+		for _, arg := range v.Arguments {
+			argVal := InterpretNode(arg, context)
+			argValues = append(argValues)
+			argValuesStr = append(argValuesStr, fmt.Sprintf("%s %s",
+				_typemap[argVal.WType], argVal.LValue))
+		}
+		funcVar := context.Lookup(v.Func.(*model.Name).Text)
+		funcName := fmt.Sprintf("@\"%s\"", v.Func.(*model.Name).Text)
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("%s = call %s %s(%s)", result, _typemap[funcVar.WType], funcName,
+				strings.Join(argValuesStr, ", ")))
+
+		return &LValue{
+			WType:  funcVar.WType,
+			LValue: result,
+		}
+
 	//	val := context.Lookup(name)
 	//	return val.Type
 	//	// custom function and it should be....
 	//
-	//case *model.CompoundExpression:
-	//	var val string
-	//	context.NewScope(func() {
-	//		for _, statement := range v.Statements.Statements[:len(v.Statements.Statements)-1] {
-	//			// do we need pop to keep stack blance?
-	//
-	//			InterpretNode(statement, context)
-	//			// need check break return too
-	//
-	//		}
-	//		// here must using expression not statment
-	//		// it is expression as Statment
-	//		val = InterpretNode(
-	//			v.Statements.Statements[len(v.Statements.Statements)-1].(*model.ExpressionAsStatement).Expression,
-	//			context)
-	//		log.Debugf("CompoundExpression1 %v", val)
-	//	})
-	//	log.Debugf("CompoundExpression %v", val)
-	//	return val
+	case *model.CompoundExpression:
+		var val *LValue
+		context.NewScope(func() {
+			val = InterpretNode(&v.Statements, context)
+		})
+		return val
+
 	default:
 		panic(fmt.Sprintf("Can't intepre %#v to source", v))
 	}
