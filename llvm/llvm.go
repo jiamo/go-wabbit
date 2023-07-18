@@ -347,7 +347,7 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 				//context.N++
 			} else {
 				context.function.code = append(context.function.code,
-					fmt.Sprintf("store %s %s, %s* @\"%s\"",
+					fmt.Sprintf("store %s %s, %s* %%\"%s\"",
 						_typemap[valtype], _zero[valtype], _typemap[valtype], v.Name.Text))
 			}
 			context.Define(v.Name.Text, &LValue{valtype,
@@ -627,6 +627,8 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", merge_label))
 		context.function.code = append(context.function.code, fmt.Sprintf("%s:", merge_label))
 
+		// llvmlite have is_terminated we have have too
+
 	case *model.BreakStatement:
 		// we need scope for level break
 		val := context.Lookup("break") // fake using type as label
@@ -714,8 +716,15 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 
 			}
 			InterpretNode(&v.Body, context)
+			// 如果没有解释 block 没有结束为什么？
+
 			//context.function.code = append(context.function.code,
 			//	fmt.Sprintf("store %s %s, %s* %s ", ptype, argName, ptype, pname))
+			// directly return a default zero !
+
+			context.function.code = append(context.function.code,
+				fmt.Sprintf("ret %s %s", _typemap[v.ReturnType.Type()], _zero[v.ReturnType.Type()]))
+
 		})
 		log.Debug("begining function", context.function.String())
 		context.globals = append(context.globals, context.function.String())
