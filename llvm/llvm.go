@@ -736,28 +736,59 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		//	argType := "int"
 		//	//value := InterpretNode(v.Func, context) // while lookup
 		//	//
-		//	name := v.Func.(*model.Name).Text
+		name := v.Func.(*model.Name).Text
 		//	//funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
 		//	log.Debugf("name %v", name)
-		//	if name == "int" {
-		//		// only float need to cast
-		//		if argType == "float" {
-		//			context.function.code = append(context.function.code, "i32.trunc_f64_s")
-		//		}
-		//		return "int"
-		//	}
-		//	if name == "float" {
-		//		if argType != "float" {
-		//			context.function.code = append(context.function.code, "f64.convert_i32_s")
-		//		}
-		//		return "float"
-		//	}
-		//	if name == "char" {
-		//		return "char"
-		//	}
-		//	if name == "bool" {
-		//		return "bool"
-		//	}
+		if name == "int" {
+			// only float need to cast
+			argVal := InterpretNode(v.Arguments[0], context)
+			var result string
+			if argVal.WType == "float" {
+				result = context.NewRegister()
+				ltype := _typemap[argVal.WType]
+				context.function.code = append(context.function.code,
+					fmt.Sprintf("%s = fptosi %s %s to i32", result, ltype, argVal.LValue))
+			} else {
+				result = argVal.LValue
+			}
+			return &LValue{
+				WType:  "int",
+				LValue: result,
+			}
+		}
+		if name == "float" {
+			argVal := InterpretNode(v.Arguments[0], context)
+			var result string
+			if argVal.WType != "float" {
+				result = context.NewRegister()
+				ltype := _typemap[argVal.WType]
+				context.function.code = append(context.function.code,
+					fmt.Sprintf("%s = sitofp %s %s to double", result, ltype, argVal.LValue))
+			} else {
+				result = argVal.LValue
+			}
+			return &LValue{
+				WType:  "float",
+				LValue: result,
+			}
+		}
+		if name == "char" {
+			argVal := InterpretNode(v.Arguments[0], context)
+			var result string
+			if argVal.WType != "char" {
+				result = context.NewRegister()
+				ltype := _typemap[argVal.WType]
+				context.function.code = append(context.function.code,
+					fmt.Sprintf("%s = trunc %s %s to i8", result, ltype, argVal.LValue))
+			} else {
+				result = argVal.LValue
+			}
+			return &LValue{
+				WType:  "char",
+				LValue: result,
+			}
+		}
+
 		var result = context.NewRegister()
 		var argValues []*LValue
 		var argValuesStr []string
