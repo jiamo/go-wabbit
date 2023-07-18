@@ -177,7 +177,7 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		}
 		//context.code = append(context.code, Instruction{"IPUSH", int(rune(unquoted[0]))})
 		//context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", int(rune(unquoted[0]))))
-		return &LValue{"int", fmt.Sprintf("%v", int(rune(unquoted[0]))), ""}
+		return &LValue{"char", fmt.Sprintf("%v", int(rune(unquoted[0]))), ""}
 	case *model.Name:
 		// may be the scope is not Important...!
 		// %".4" = load double, double* @"xmin"
@@ -608,7 +608,20 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		context.function.code = append(context.function.code, "return")
 		return value
 	//
-	//case *model.WhileStatement:
+	case *model.WhileStatement:
+		test_label := context.NewLabel()
+		body_label := context.NewLabel()
+		exit_label := context.NewLabel()
+
+		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", test_label))
+		context.function.code = append(context.function.code, fmt.Sprintf("%s:", test_label))
+		test := InterpretNode(v.Test, context)
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("br i1 %s, label %%%s, label %%%s", test.LValue, body_label, exit_label))
+		context.function.code = append(context.function.code, fmt.Sprintf("%s:", body_label))
+		InterpretNode(&v.Body, context)
+		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", test_label))
+		context.function.code = append(context.function.code, fmt.Sprintf("%s:", exit_label))
 	//	test_label := context.NewLabel()
 	//	exit_label := context.NewLabel()
 	//
