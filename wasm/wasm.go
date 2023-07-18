@@ -32,7 +32,7 @@ type WasmFunction struct {
 func (f *WasmFunction) String() string {
 	out := fmt.Sprintf("(func $%s (export \"%s\")\n", f.name, f.name)
 	for _, parm := range f.parameters {
-		out += fmt.Sprintf("(param $%s %s)\n", parm.Name, _typemap[parm.Type.Type()])
+		out += fmt.Sprintf("(param $%s %s)\n", parm.Name.Text, _typemap[parm.Type.Type()])
 	}
 	if f.retType != "" {
 		out += fmt.Sprintf("(result %s)\n", _typemap[f.retType])
@@ -152,7 +152,7 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 			panic(err)
 		}
 		//context.code = append(context.code, Instruction{"IPUSH", int(rune(unquoted[0]))})
-		context.function.code = append(context.function.code, fmt.Sprintf("f32.const %v", int(rune(unquoted[0]))))
+		context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", int(rune(unquoted[0]))))
 		return "char"
 	case *model.Name:
 		value := context.Lookup(v.Text)
@@ -284,6 +284,7 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 
 		if context.scope == "global" {
 			if valtype == "float" {
+				// global using module
 				context.module = append(context.module, fmt.Sprintf("(global $%s (mut f64) (f64.const 0.0))", v.Name.Text))
 			} else {
 				context.module = append(context.module, fmt.Sprintf("(global $%s (mut i32) (i32.const 0))", v.Name.Text))
@@ -292,10 +293,11 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 				context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Name.Text))
 			}
 		} else if context.scope == "local" {
+			// local using function
 			if valtype == "float" {
-				context.module = append(context.module, fmt.Sprintf("(local $%s (mut f64) (f64.const 0.0))", v.Name.Text))
+				context.function.locals = append(context.function.locals, fmt.Sprintf("(local $%s f64)", v.Name.Text))
 			} else {
-				context.module = append(context.module, fmt.Sprintf("(local $%s (mut i32) (i32.const 0))", v.Name.Text))
+				context.function.locals = append(context.function.locals, fmt.Sprintf("(local $%s i32)", v.Name.Text))
 			}
 			if v.Value != nil {
 				context.function.code = append(context.function.code, fmt.Sprintf("local.set $%s", v.Name.Text))
@@ -315,9 +317,9 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 			context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Name.Text))
 		} else if context.scope == "local" {
 			if valtype == "float" {
-				context.module = append(context.module, fmt.Sprintf("(local $%s (mut f64) (f64.const 0.0))", v.Name.Text))
+				context.function.locals = append(context.function.locals, fmt.Sprintf("(local $%s (mut f64) (f64.const 0.0))", v.Name.Text))
 			} else {
-				context.module = append(context.module, fmt.Sprintf("(local $%s (mut i32) (i32.const 0))", v.Name.Text))
+				context.function.locals = append(context.function.locals, fmt.Sprintf("(local $%s (mut i32) (i32.const 0))", v.Name.Text))
 			}
 			context.function.code = append(context.function.code, fmt.Sprintf("local.set $%s", v.Name.Text))
 		}
@@ -461,7 +463,9 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 
 	case *model.ExpressionAsStatement:
 		InterpretNode(v.Expression, context)
+		// why need drop... . Don't need drop I think
 		context.function.code = append(context.function.code, "drop")
+		//return val
 
 	case *model.Grouping:
 		return InterpretNode(v.Expression, context)
@@ -489,10 +493,10 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 	case *model.BreakStatement:
 		// we need scope for level break
 		val := context.Lookup("break") // fake using type as label
-		context.function.code = append(context.function.code, "br $%s", val.Scope)
+		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", val.Scope))
 	case *model.ContinueStatement:
 		val := context.Lookup("continue") // fake using type as label
-		context.function.code = append(context.function.code, "br $%s", val.Scope)
+		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", val.Scope))
 
 	case *model.ReturnStatement:
 		value := InterpretNode(v.Value, context)
@@ -513,6 +517,7 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 			context.Define("break", &WASMVar{"", exit_label}) // we only fake using scope..
 			context.Define("continue", &WASMVar{"", test_label})
 			InterpretNode(&v.Body, context)
+			context.function.code = append(context.function.code, fmt.Sprintf("br $%s", test_label))
 			context.function.code = append(context.function.code, "end")
 
 		})
@@ -529,7 +534,7 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 			parameters: v.Parameters,
 			retType:    v.ReturnType.Type(),
 		}
-		context.Define(v.Name.Text, &WASMVar{"func", v.ReturnType.Type()}) //
+		context.Define(v.Name.Text, &WASMVar{v.ReturnType.Type(), ""}) //
 		context.NewScope(func() {
 			context.scope = "local"
 			for _, param := range v.Parameters {
@@ -538,8 +543,9 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 			InterpretNode(&v.Body, context)
 		})
 		context.module = append(context.module, context.function.String())
-		context.scope = "global"
 		context.function = oldfuc
+		context.scope = "global"
+
 		if v.Name.Text == "main" {
 			context.haveMain = true
 		}
@@ -548,8 +554,6 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		argType := "int"
 		//value := InterpretNode(v.Func, context) // while lookup
 		for _, arg := range v.Arguments {
-			// TODO check the type
-			//fmt.Println("arg %v", arg)
 			argType = InterpretNode(arg, context) // arg eval in current context
 		}
 		//
@@ -559,13 +563,13 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		if name == "int" {
 			// only float need to cast
 			if argType == "float" {
-				context.function.code = append(context.function.code, "i32.trunc_s/f64")
+				context.function.code = append(context.function.code, "i32.trunc_f64_s")
 			}
 			return "int"
 		}
 		if name == "float" {
 			if argType != "float" {
-				context.function.code = append(context.function.code, "f64.convert_s/i32")
+				context.function.code = append(context.function.code, "f64.convert_i32_s")
 			}
 			return "float"
 		}
@@ -583,8 +587,21 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 	case *model.CompoundExpression:
 		var val string
 		context.NewScope(func() {
-			val = InterpretNode(&v.Statements, context)
+			for _, statement := range v.Statements.Statements[:len(v.Statements.Statements)-1] {
+				// do we need pop to keep stack blance?
+
+				InterpretNode(statement, context)
+				// need check break return too
+
+			}
+			// here must using expression not statment
+			// it is expression as Statment
+			val = InterpretNode(
+				v.Statements.Statements[len(v.Statements.Statements)-1].(*model.ExpressionAsStatement).Expression,
+				context)
+			log.Debugf("CompoundExpression1 %v", val)
 		})
+		log.Debugf("CompoundExpression %v", val)
 		return val
 	default:
 		panic(fmt.Sprintf("Can't intepre %#v to source", v))
