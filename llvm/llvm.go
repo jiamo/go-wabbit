@@ -496,61 +496,51 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		consequence := context.NewLabel()
 		alternative := context.NewLabel()
 		merge := context.NewLabel()
-		var ret *LValue
-		ret = InterpretNode(v.Left, context)
+		var right *LValue
+		left := InterpretNode(v.Left, context)
 		context.function.code = append(context.function.code,
-			fmt.Sprintf("br i1 %s, label %%%s, label %%%s", ret.LValue, consequence, alternative))
+			fmt.Sprintf("br i1 %s, label %%%s, label %%%s", left.LValue, consequence, alternative))
 		context.function.code = append(context.function.code, fmt.Sprintf("%s:", consequence))
 		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", merge))
 
 		context.NewScope(func() {
 			context.function.code = append(context.function.code, fmt.Sprintf("%s:", alternative))
-			ret = InterpretNode(v.Right, context)
+			right = InterpretNode(v.Right, context)
 			context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", merge))
 		})
 
 		context.function.code = append(context.function.code, fmt.Sprintf("%s:", merge))
 
-		return &LValue{"bool", ret.LValue, context.scope}
-
-		//begin := context.NewLabel("begin")
-		//context.function.code = append(context.function.code, fmt.Sprintf("block $%s (result i32)", begin))
-		//
-		//or_block := context.NewLabel("or_block")
-		//context.function.code = append(context.function.code, fmt.Sprintf("block $%s", or_block))
-		//_ = InterpretNode(v.Left, context)
-		//context.function.code = append(context.function.code, fmt.Sprintf("br_if $%s", or_block))
-		//_ = InterpretNode(v.Right, context)
-		//context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
-		//context.function.code = append(context.function.code, "end")
-		//context.function.code = append(context.function.code, "i32.const 1")
-		//context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
-		//context.function.code = append(context.function.code, "end")
-		//return "bool"
+		ret := context.NewRegister()
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("%s = phi i1 [ %s, %%%s ], [ %s, %%%s ]",
+				ret, left.LValue, consequence, right.LValue, alternative))
+		return &LValue{"bool", ret, context.scope}
 
 	case *model.LogAnd:
+		consequence := context.NewLabel()
+		alternative := context.NewLabel()
+		merge := context.NewLabel()
+		var right *LValue
 		left := InterpretNode(v.Left, context)
-		right := InterpretNode(v.Right, context)
-		val := context.NewRegister()
-		ltype := _typemap[left.WType]
-		context.function.code = append(context.function.code, fmt.Sprintf("%s = or %s %s, %s", val, ltype, left.LValue, right.LValue))
-		return &LValue{"bool", val, context.scope}
-		//begin := context.NewLabel("begin")
-		//context.function.code = append(context.function.code, fmt.Sprintf("block $%s (result i32)", begin))
-		//
-		//and_block := context.NewLabel("and_block")
-		//context.function.code = append(context.function.code, fmt.Sprintf("block $%s", and_block))
-		//_ = InterpretNode(v.Left, context)
-		//context.function.code = append(context.function.code, "i32.const 1")
-		//context.function.code = append(context.function.code, "i32.xor")
-		//context.function.code = append(context.function.code, fmt.Sprintf("br_if $%s", and_block))
-		//_ = InterpretNode(v.Right, context)
-		//context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
-		//context.function.code = append(context.function.code, "end")
-		//context.function.code = append(context.function.code, "i32.const 0")
-		//context.function.code = append(context.function.code, fmt.Sprintf("br $%s", begin))
-		//context.function.code = append(context.function.code, "end")
-		//return "bool" // no need or and any more
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("br i1 %s, label %%%s, label %%%s", left.LValue, consequence, alternative))
+		context.function.code = append(context.function.code, fmt.Sprintf("%s:", alternative))
+		context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", merge))
+
+		context.NewScope(func() {
+			context.function.code = append(context.function.code, fmt.Sprintf("%s:", consequence))
+			right = InterpretNode(v.Right, context)
+			context.function.code = append(context.function.code, fmt.Sprintf("br label %%%s", merge))
+		})
+
+		context.function.code = append(context.function.code, fmt.Sprintf("%s:", merge))
+
+		ret := context.NewRegister()
+		context.function.code = append(context.function.code,
+			fmt.Sprintf("%s = phi i1 [ %s, %%%s ], [ %s, %%%s ] ",
+				ret, left.LValue, alternative, right.LValue, consequence))
+		return &LValue{"bool", ret, context.scope}
 
 	case *model.Assignment:
 		//context.N++ // why assignment need ++
