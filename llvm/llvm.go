@@ -21,14 +21,6 @@ type Parameter struct {
 	PValue string
 }
 
-func NewLValue(wtype string, lvalue string, scope string) *LValue {
-	return &LValue{
-		WType:  wtype,
-		LValue: lvalue,
-		Scope:  scope,
-	}
-}
-
 type Function struct {
 	name       string
 	parameters []model.Parameter
@@ -53,30 +45,19 @@ var _zero = map[string]string{
 }
 
 func (f *Function) String() string {
-	parms := []string{}
+	var parms []string
 	for index, parm := range f.parameters {
 		argname := fmt.Sprintf("%%\".%d\"", index+1)
 		parms = append(parms, fmt.Sprintf("%s %s", _typemap[parm.Type.Type()], argname))
 	}
 	parmstr := strings.Join(parms, ", ")
 	out := fmt.Sprintf("define %s @\"%s\"(%s)\n{\n", _typemap[f.retType], f.name, parmstr)
-
-	//if f.retType != "" {
-	//	out += fmt.Sprintf("(result %s)\n", _typemap[f.retType])
-	//	out += fmt.Sprintf("(local $return %s)\n", _typemap[f.retType])
-	//}
-	//out += "\n" + strings.Join(f.locals, "\n")
-	//out += "\nblock $return\n"
 	out += strings.Join(f.code, "\n  ")
-	//out += "\nend\n"
-	//if f.retType != "" {
-	//	out += "local.get $return\n"
-	//}
 	out += "\n}"
 	return out
 }
 
-type LLVMContext struct {
+type Context struct {
 	N        int
 	nlabels  int
 	globals  []string
@@ -86,21 +67,20 @@ type LLVMContext struct {
 	env      *common.ChainMap
 }
 
-func (l *LLVMContext) NewRegister() string {
-	l.N++
-	return fmt.Sprintf("%%\".%d\"", l.N) // we using llvmlite format
+func (ctx *Context) NewRegister() string {
+	ctx.N++
+	return fmt.Sprintf("%%\".%d\"", ctx.N)
 }
-func (l *LLVMContext) NewLabel() string {
-	l.N++
-	return fmt.Sprintf("\".%d\"", l.N) // we using llvmlite format
+func (ctx *Context) NewLabel() string {
+	ctx.N++
+	return fmt.Sprintf("\".%d\"", ctx.N)
 }
 
-// may be
-func (ctx *LLVMContext) Define(name string, value *LValue) {
+func (ctx *Context) Define(name string, value *LValue) {
 	ctx.env.SetValue(name, value)
 }
 
-func (ctx *LLVMContext) Lookup(name string) *LValue {
+func (ctx *Context) Lookup(name string) *LValue {
 	v, e := ctx.env.GetValue(name)
 	if e == true {
 		return v.(*LValue)
@@ -109,7 +89,7 @@ func (ctx *LLVMContext) Lookup(name string) *LValue {
 	}
 }
 
-func (ctx *LLVMContext) NewScope(do func()) {
+func (ctx *Context) NewScope(do func()) {
 	oldEnv := ctx.env
 	ctx.env = ctx.env.NewChild()
 	defer func() {
@@ -119,7 +99,7 @@ func (ctx *LLVMContext) NewScope(do func()) {
 }
 
 func LLVM(program *model.Program) string {
-	context := &LLVMContext{
+	context := &Context{
 		N: 0,
 		globals: []string{
 			"declare void @\"_printi\"(i32 %\".1\")",
@@ -152,15 +132,7 @@ func BoolToInt(b bool) int {
 	return 0
 }
 
-func insert(slice []string, value string, position int) []string {
-	slice = append(slice[:position], append([]string{value}, slice[position:]...)...)
-	return slice
-}
-
-// may be not same like wasm generate the code directly
-// we just using code
-
-func InterpretNode(node model.Node, context *LLVMContext) *LValue {
+func InterpretNode(node model.Node, context *Context) *LValue {
 	switch v := node.(type) {
 	case *model.Integer:
 		//context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", v.Value))
@@ -187,16 +159,8 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		value := context.Lookup(v.Text)
 		r := context.NewRegister()
 		ltype := _typemap[value.WType]
-		//if context.scope == "global" {
-		//	context.function.code = append(context.function.code,
-		//		fmt.Sprintf("%s = load %s, %s* %s", r, ltype, ltype, value.LValue))
-		//} else {
-		//	context.function.code = append(context.function.code,
-		//		fmt.Sprintf("%s = load %s, %s* %%\"%s\"", r, ltype, ltype, v.Text))
-		//}
 		context.function.code = append(context.function.code,
 			fmt.Sprintf("%s = load %s, %s* %s", r, ltype, ltype, value.LValue))
-		// local is % global is @
 		return &LValue{value.WType, r, ""}
 
 	//case *model.NameType:
@@ -300,12 +264,9 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		right := InterpretNode(v.Operand, context)
 		val := context.NewRegister()
 		if right.WType == "bool" {
-			//context.function.code = append(context.function.code, "i32.const 1")
-			//context.function.code = append(context.function.code, "i32.xor")
 			context.function.code = append(context.function.code,
 				fmt.Sprintf("%s = xor i1 1, %s", val, right.LValue))
 		} else {
-			// we think it's a type error
 			panic("type different")
 		}
 		return &LValue{right.WType, val, ""}
@@ -319,7 +280,6 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 			valtype = val.WType
 		} else {
 			valtype = v.Type.Type()
-			//val = &LValue{valtype, "0", ""}
 		}
 		if context.scope == "global" {
 			context.globals = append(context.globals,
@@ -330,8 +290,6 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 						_typemap[valtype], val.LValue, _typemap[valtype], v.Name.Text))
 				//context.N++
 			}
-			//context.Define(v.Name.Text, &LValue{valtype,
-			//	fmt.Sprintf("@\"%s\"", v.Name.Text), context.scope}) // TODO
 			context.Define(v.Name.Text, &LValue{valtype,
 				fmt.Sprintf("@\"%s\"", v.Name.Text), context.scope}) // TODO
 
@@ -396,27 +354,6 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 			context.Define(v.Name.Text, &LValue{valtype,
 				fmt.Sprintf("%%\"%s\"", v.Name.Text), context.scope}) // TO
 		}
-
-	//
-	//case *model.ConstDeclaration:
-	//	valtype := InterpretNode(v.Value, context)
-	//	if context.scope == "global" {
-	//		if valtype == "float" {
-	//			context.module = append(context.module, fmt.Sprintf("(global $%s (mut f64) (f64.const 0.0))", v.Name.Text))
-	//		} else {
-	//			context.module = append(context.module, fmt.Sprintf("(global $%s (mut i32) (i32.const 0))", v.Name.Text))
-	//		}
-	//		context.function.code = append(context.function.code, fmt.Sprintf("global.set $%s", v.Name.Text))
-	//	} else if context.scope == "local" {
-	//		if valtype == "float" {
-	//			context.function.locals = append(context.function.locals, fmt.Sprintf("(local $%s (mut f64) (f64.const 0.0))", v.Name.Text))
-	//		} else {
-	//			context.function.locals = append(context.function.locals, fmt.Sprintf("(local $%s (mut i32) (i32.const 0))", v.Name.Text))
-	//		}
-	//		context.function.code = append(context.function.code, fmt.Sprintf("local.set $%s", v.Name.Text))
-	//	}
-	//	context.Define(v.Name.Text, &WASMVar{Type: valtype, Scope: context.scope})
-	//	return ""
 
 	case *model.Lt:
 		left := InterpretNode(v.Left, context)
@@ -578,22 +515,13 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 		// llvm no need drop....
 		var result *LValue
 		for _, statement := range v.Statements {
-			// do we need pop to keep stack blance?
-			//if result != "" {
-			//	context.function.code = append(context.function.code, "drop")
-			//}
 			result = InterpretNode(statement, context)
-			// need check break return too
-
 		}
 		return result
 
 	case *model.ExpressionAsStatement:
 		result := InterpretNode(v.Expression, context)
 		return result
-		// why need drop... . Don't need drop I think
-		//context.function.code = append(context.function.code, "drop")
-		//return val
 
 	case *model.Grouping:
 		return InterpretNode(v.Expression, context)
@@ -654,25 +582,6 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 
 		context.function.code = append(context.function.code, fmt.Sprintf("%s:", exit_label))
 
-	//	test_label := context.NewLabel()
-	//	exit_label := context.NewLabel()
-	//
-	//	context.function.code = append(context.function.code, fmt.Sprintf("block $%s", exit_label))
-	//	context.function.code = append(context.function.code, fmt.Sprintf("loop $%s", test_label))
-	//	InterpretNode(v.Test, context)
-	//	context.function.code = append(context.function.code, "i32.const 1")
-	//	context.function.code = append(context.function.code, "i32.xor")
-	//	context.function.code = append(context.function.code, fmt.Sprintf("br_if $%s", exit_label))
-	//	context.NewScope(func() {
-	//		context.Define("break", &WASMVar{"", exit_label}) // we only fake using scope..
-	//		context.Define("continue", &WASMVar{"", test_label})
-	//		InterpretNode(&v.Body, context)
-	//		context.function.code = append(context.function.code, fmt.Sprintf("br $%s", test_label))
-	//		context.function.code = append(context.function.code, "end")
-	//
-	//	})
-	//	context.function.code = append(context.function.code, "end")
-	//
 	case *model.FunctionDeclaration:
 		oldfunc := context.function
 		context.function = Function{
@@ -706,12 +615,6 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 
 			}
 			InterpretNode(&v.Body, context)
-			// 如果没有解释 block 没有结束为什么？
-
-			//context.function.code = append(context.function.code,
-			//	fmt.Sprintf("store %s %s, %s* %s ", ptype, argName, ptype, pname))
-			// directly return a default zero !
-
 			context.function.code = append(context.function.code,
 				fmt.Sprintf("ret %s %s", _typemap[v.ReturnType.Type()], _zero[v.ReturnType.Type()]))
 
@@ -723,12 +626,8 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 
 	//
 	case *model.FunctionApplication:
-		//	argType := "int"
-		//	//value := InterpretNode(v.Func, context) // while lookup
-		//	//
+
 		name := v.Func.(*model.Name).Text
-		//	//funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
-		//	log.Debugf("name %v", name)
 		if name == "int" {
 			// only float need to cast
 			argVal := InterpretNode(v.Arguments[0], context)
@@ -799,10 +698,6 @@ func InterpretNode(node model.Node, context *LLVMContext) *LValue {
 			LValue: result,
 		}
 
-	//	val := context.Lookup(name)
-	//	return val.Type
-	//	// custom function and it should be....
-	//
 	case *model.CompoundExpression:
 		var val *LValue
 		context.NewScope(func() {

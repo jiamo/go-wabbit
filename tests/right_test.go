@@ -6,11 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 	"wabbit-go/interpreter"
+	"wabbit-go/llvm"
 	"wabbit-go/parser" // Update this import path
+	"wabbit-go/wasm"
+	"wabbit-go/wvm"
 )
 
-//var rightProgramPath string
-//var wrongProgramPath string
+var rightProgramPath string
+var wrongProgramPath string
 
 func init() {
 	wd, err := os.Getwd()
@@ -21,7 +24,7 @@ func init() {
 	wrongProgramPath = filepath.Join(wd, "ErrorLex")
 }
 
-func TestParserRightProgram(t *testing.T) {
+func TestRightProgram(t *testing.T) {
 	t.Log(rightProgramPath + "/*.wb")
 	rightFiles, _ := filepath.Glob(rightProgramPath + "/*.wb")
 	//t.Log("files:", rightFiles)
@@ -32,19 +35,9 @@ func TestParserRightProgram(t *testing.T) {
 		if err != nil {
 			t.Errorf(err.Error())
 		}
-		interpreter.InterpretProgram(p.Model)
+		interpreter.InterpretProgram(p)
+		wvm.Wvm(p)
+		wasm.Wasm(p)
+		llvm.LLVM(p)
 	}
 }
-
-// TODO wrong program should report error
-//func TestParseErrorProgram(t *testing.T) {
-//	wrongFiles, _ := filepath.Glob(wrongProgramPath + "/*.wb")
-//	for _, file := range wrongFiles {
-//		t.Log("handing ", file)
-//		p, err := tokenize.HandleFile(file)
-//		if err == nil {
-//			t.Errorf("should failed but not failed")
-//		}
-//
-//	}
-//}

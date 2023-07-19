@@ -45,15 +45,7 @@ func (vm *WVM) run(instructions []Instruction) {
 		op := instructions[vm.pc].opcode
 		args := instructions[vm.pc].args
 		vm.pc++
-		//for _, arg := range args {
-		//	args = append(args, vm.get(arg))
-		//}
-		//getattr(vm, op).call(args...)
 		argValues := make([]reflect.Value, 1)
-		//for i, arg := range args {
-		//	argValues[i] = reflect.ValueOf(arg)
-		//}
-		//log.Debugf("method is %v", op)
 		method := reflect.ValueOf(vm).MethodByName(op)
 		if args == nil {
 			//argValues[0] = reflect.ValueOf(nil)
@@ -65,19 +57,6 @@ func (vm *WVM) run(instructions []Instruction) {
 
 	}
 }
-
-//func (vm *WVM) get(arg interface{}) interface{} {
-//	switch arg.(type) {
-//	case int:
-//		return arg.(int)
-//	case float64:
-//		return arg.(float64)
-//	case string:
-//		return vm.globals[arg.(string)]
-//	default:
-//		panic("invalid argument type")
-//	}
-//}
 
 func (vm *WVM) IPUSH(value int) {
 	vm.istack = append(vm.istack, value)
@@ -306,8 +285,7 @@ func (vm *WVM) HALT() {
 	vm.running = false
 }
 
-func (vm *WVM) LABEL(name int) {
-
+func (vm *WVM) LABEL(_ int) {
 }
 
 func (vm *WVM) FSTORE_GLOBAL(slot int) {
@@ -324,7 +302,7 @@ func (vm *WVM) RETURN() {
 	vm.frame = vm.frame.prevFrame
 }
 
-type WVMContext struct {
+type Context struct {
 	env       *common.ChainMap
 	code      []Instruction
 	nglobals  int
@@ -335,8 +313,8 @@ type WVMContext struct {
 	parentEnv *map[string]interface{}
 }
 
-func NewWVMContext() *WVMContext {
-	return &WVMContext{
+func NewWVMContext() *Context {
+	return &Context{
 		env:   common.NewChainMap(),
 		scope: "global",
 		code:  make([]Instruction, 0),
@@ -349,11 +327,11 @@ type WVMVar struct {
 	Slot  int
 }
 
-func (ctx *WVMContext) Define(name string, value *WVMVar) {
+func (ctx *Context) Define(name string, value *WVMVar) {
 	ctx.env.SetValue(name, value)
 }
 
-func (ctx *WVMContext) Lookup(name string) *WVMVar {
+func (ctx *Context) Lookup(name string) *WVMVar {
 	v, e := ctx.env.GetValue(name)
 	if e == true {
 		return v.(*WVMVar)
@@ -362,7 +340,7 @@ func (ctx *WVMContext) Lookup(name string) *WVMVar {
 	}
 }
 
-func (ctx *WVMContext) NewVariable() (string, int) {
+func (ctx *Context) NewVariable() (string, int) {
 	if ctx.scope == "global" {
 		ctx.nglobals++
 		return "global", ctx.nglobals - 1
@@ -372,12 +350,12 @@ func (ctx *WVMContext) NewVariable() (string, int) {
 	}
 }
 
-func (ctx *WVMContext) NewLabel() int {
+func (ctx *Context) NewLabel() int {
 	ctx.nlabels++
 	return ctx.nlabels - 1
 }
 
-func (ctx *WVMContext) NewScope(do func()) {
+func (ctx *Context) NewScope(do func()) {
 	oldEnv := ctx.env
 	ctx.env = ctx.env.NewChild()
 	defer func() {
@@ -400,7 +378,7 @@ func Wvm(program *model.Program) error {
 	return nil
 }
 
-func InterpretNode(node model.Node, context *WVMContext) string {
+func InterpretNode(node model.Node, context *Context) string {
 	switch v := node.(type) {
 	case *model.Integer:
 		context.code = append(context.code, Instruction{"IPUSH", v.Value})
@@ -835,14 +813,9 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		context.code = append(context.code, Instruction{"LABEL", exit_label})
 
 	case *model.FunctionDeclaration:
-		// we should check the function name is not defined
-		// we can keep function into another position // that's what I am doing in 2022
-		// and put function in the end....
 
 		start_label := context.NewLabel()
 		end_label := context.NewLabel()
-		// we don't put function
-
 		context.code = append(context.code, Instruction{"GOTO", end_label})
 		context.code = append(context.code, Instruction{"LABEL", start_label})
 		context.Define(v.Name.Text, &WVMVar{v.ReturnType.Type(), "", start_label}) //
@@ -872,13 +845,9 @@ func InterpretNode(node model.Node, context *WVMContext) string {
 		argType := "int"
 		//value := InterpretNode(v.Func, context) // while lookup
 		for _, arg := range v.Arguments {
-			// TODO check the type
-			//fmt.Println("arg %v", arg)
 			argType = InterpretNode(arg, context) // arg eval in current context
 		}
-		//
-		//savedContext = funtionClosure.Value.Context
-		// TODO make it as builtin function...
+
 		name := v.Func.(*model.Name).Text
 		funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
 		log.Debugf("name %v", name)

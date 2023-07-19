@@ -21,7 +21,7 @@ type Parameter struct {
 	Type string
 }
 
-type WasmFunction struct {
+type Function struct {
 	name       string
 	parameters []model.Parameter
 	retType    string
@@ -29,7 +29,7 @@ type WasmFunction struct {
 	locals     []string
 }
 
-func (f *WasmFunction) String() string {
+func (f *Function) String() string {
 	out := fmt.Sprintf("(func $%s (export \"%s\")\n", f.name, f.name)
 	for _, parm := range f.parameters {
 		out += fmt.Sprintf("(param $%s %s)\n", parm.Name.Text, _typemap[parm.Type.Type()])
@@ -49,10 +49,10 @@ func (f *WasmFunction) String() string {
 	return out
 }
 
-type WabbitWasmModule struct {
+type Context struct {
 	module   []string
 	env      *common.ChainMap
-	function WasmFunction
+	function Function
 	scope    string
 	nlabels  int
 	haveMain bool
@@ -63,11 +63,11 @@ type WASMVar struct {
 	Scope string
 }
 
-func NewWabbitWasmModule() *WabbitWasmModule {
-	w := &WabbitWasmModule{
+func NewWabbitWasmModule() *Context {
+	w := &Context{
 		module: []string{"(module"},
 		env:    common.NewChainMap(),
-		function: WasmFunction{
+		function: Function{
 			name: "main",
 		},
 		scope: "global",
@@ -80,15 +80,15 @@ func NewWabbitWasmModule() *WabbitWasmModule {
 	return w
 }
 
-func (m *WabbitWasmModule) String() string {
+func (m *Context) String() string {
 	return strings.Join(m.module, "\n") + "\n)\n"
 }
 
-func (ctx *WabbitWasmModule) Define(name string, value *WASMVar) {
+func (ctx *Context) Define(name string, value *WASMVar) {
 	ctx.env.SetValue(name, value)
 }
 
-func (ctx *WabbitWasmModule) Lookup(name string) *WASMVar {
+func (ctx *Context) Lookup(name string) *WASMVar {
 	v, e := ctx.env.GetValue(name)
 	if e == true {
 		return v.(*WASMVar)
@@ -97,7 +97,7 @@ func (ctx *WabbitWasmModule) Lookup(name string) *WASMVar {
 	}
 }
 
-func (ctx *WabbitWasmModule) NewScope(do func()) {
+func (ctx *Context) NewScope(do func()) {
 	oldEnv := ctx.env
 	ctx.env = ctx.env.NewChild()
 	defer func() {
@@ -106,7 +106,7 @@ func (ctx *WabbitWasmModule) NewScope(do func()) {
 	do()
 }
 
-func (m *WabbitWasmModule) NewLabel(name ...string) string {
+func (m *Context) NewLabel(name ...string) string {
 	newID := m.nlabels
 	m.nlabels++
 	if name == nil {
@@ -138,7 +138,7 @@ func insert(slice []string, value string, position int) []string {
 	return slice
 }
 
-func InterpretNode(node model.Node, context *WabbitWasmModule) string {
+func InterpretNode(node model.Node, context *Context) string {
 	switch v := node.(type) {
 	case *model.Integer:
 		context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", v.Value))
@@ -451,21 +451,16 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 
 		var result string
 		for _, statement := range v.Statements {
-			// do we need pop to keep stack blance?
 			if result != "" {
 				context.function.code = append(context.function.code, "drop")
 			}
 			result = InterpretNode(statement, context)
-			// need check break return too
-
 		}
 		return result
 
 	case *model.ExpressionAsStatement:
 		InterpretNode(v.Expression, context)
-		// why need drop... . Don't need drop I think
 		context.function.code = append(context.function.code, "drop")
-		//return val
 
 	case *model.Grouping:
 		return InterpretNode(v.Expression, context)
@@ -524,12 +519,9 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		context.function.code = append(context.function.code, "end")
 
 	case *model.FunctionDeclaration:
-		// we should check the function name is not defined
-		// we can keep function into another position // that's what I am doing in 2022
-		// and put function in the end....
 
 		oldfuc := context.function
-		context.function = WasmFunction{
+		context.function = Function{
 			name:       v.Name.Text,
 			parameters: v.Parameters,
 			retType:    v.ReturnType.Type(),
@@ -552,13 +544,10 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 
 	case *model.FunctionApplication:
 		argType := "int"
-		//value := InterpretNode(v.Func, context) // while lookup
 		for _, arg := range v.Arguments {
 			argType = InterpretNode(arg, context) // arg eval in current context
 		}
-		//
 		name := v.Func.(*model.Name).Text
-		//funcVar := context.Lookup(v.Func.(*model.Name).Text) // define in
 		log.Debugf("name %v", name)
 		if name == "int" {
 			// only float need to cast
@@ -589,13 +578,9 @@ func InterpretNode(node model.Node, context *WabbitWasmModule) string {
 		context.NewScope(func() {
 			for _, statement := range v.Statements.Statements[:len(v.Statements.Statements)-1] {
 				// do we need pop to keep stack blance?
-
 				InterpretNode(statement, context)
-				// need check break return too
-
 			}
-			// here must using expression not statment
-			// it is expression as Statment
+			// return the last expression
 			val = InterpretNode(
 				v.Statements.Statements[len(v.Statements.Statements)-1].(*model.ExpressionAsStatement).Expression,
 				context)

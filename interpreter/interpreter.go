@@ -65,10 +65,6 @@ func (c *Context) NewBlock() *Context {
 	return NewContext(c.env.NewChild(), c.level+1)
 }
 
-func NewWabbitVar(kind string, value *WabbitValue) WabbitVar {
-	return WabbitVar{Kind: kind, Value: value}
-}
-
 func (w *WabbitVar) Load() *WabbitValue {
 	return w.Value
 }
@@ -84,18 +80,16 @@ func (w *WabbitVar) Store(value *WabbitValue) error {
 	return nil
 }
 
-func InterpretProgram(program model.Node) interface{} {
-	// 创建一个新的上下文环境实例，用于存储和管理变量
+func InterpretProgram(program *model.Program) interface{} {
 	context := NewContext(nil, 0)
 
-	// 在上下文环境中预定义基本类型
 	_ = context.Define("int", &WabbitValue{Type: "cast", Value: "int"})
 	_ = context.Define("float", &WabbitValue{Type: "cast", Value: "float"})
 	_ = context.Define("char", &WabbitValue{Type: "cast", Value: "char"})
 	_ = context.Define("bool", &WabbitValue{Type: "cast", Value: "bool"})
 
 	// 解释输入的程序模型，并返回解释结果
-	return InterpretNode(program, context)
+	return InterpretNode(program.Model, context)
 }
 
 func InterpretNode(node model.Node, context *Context) *WabbitValue {
@@ -112,10 +106,7 @@ func InterpretNode(node model.Node, context *Context) *WabbitValue {
 		return &WabbitValue{"char", rune(unquoted[0])}
 	case *model.Name:
 		value, _ := context.Lookup(v.Text) // somethings we may need exist
-		// check value.Value is WabbitVar if success then return  its load
-		// else return value
 		value_var, ok := value.Value.(*WabbitVar)
-		//fmt.Println("hello world", "value ", value, " ", value_var, " ", v.Text)
 		if ok {
 			return value_var.Load()
 		} else {

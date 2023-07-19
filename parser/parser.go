@@ -22,7 +22,7 @@ type EOF struct {
 	Index  int
 }
 
-var eof = EOF{"EOF", "EOF", "EOF", -1}
+//var eof = EOF{"EOF", "EOF", "EOF", -1}
 
 type TokenStream struct {
 	program   *model.Program
@@ -371,8 +371,6 @@ func parseFuncDecl(ts *TokenStream) model.Statement {
 		return new(&model.FunctionDeclaration{name, params, &retType, *body})
 	})
 	return node.(model.Statement)
-
-	//return ts.Builder().Build("FuncDecl", name, params, retType, body)
 }
 
 func parseExpression(ts *TokenStream) model.Expression {
