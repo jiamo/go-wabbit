@@ -3,7 +3,6 @@ package wvm
 import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"reflect"
 	"strconv"
 	"wabbit-go/common"
 	"wabbit-go/model"
@@ -25,37 +24,53 @@ type WVM struct {
 	running bool
 }
 
+type OpFunc func(args interface{}) interface{}
+
 type Instruction struct {
 	opcode string
 	args   interface{}
 }
 
+func NewWVM() *WVM {
+	wvm := WVM{
+		globals: make(map[int]interface{}),
+	}
+
+	return &wvm
+}
+
+// At now we don't have bytecode just instruction
 func (vm *WVM) run(instructions []Instruction) {
 	vm.pc = 0
 	vm.running = true
+
+	// Should update Instruction to Thread code
+	opMap := vm.getOpcodeMap()
 
 	for vm.running {
 		op := instructions[vm.pc].opcode
 		args := instructions[vm.pc].args
 		vm.pc++
-		argValues := make([]reflect.Value, 1)
-		method := reflect.ValueOf(vm).MethodByName(op)
-		if args == nil {
-			//argValues[0] = reflect.ValueOf(nil)
-			method.Call([]reflect.Value{}) // empty array is not about nil
-		} else {
-			argValues[0] = reflect.ValueOf(args)
-			method.Call(argValues)
+
+		if op == "LABEL" {
+			continue
 		}
+		fn, exists := opMap[op]
+		if !exists {
+			// 错误处理：未知的字节码
+			panic(fmt.Sprintf("no such opcode %v", op))
+		}
+		fn(args)
 
 	}
 }
 
-func (vm *WVM) IPUSH(value int) {
-	vm.istack = append(vm.istack, value)
+func (vm *WVM) IPUSH(value interface{}) interface{} {
+	vm.istack = append(vm.istack, value.(int)) // reflect vs cast
+	return nil
 }
 
-func (vm *WVM) IPOP() int {
+func (vm *WVM) IPOP(value interface{}) interface{} {
 	index := len(vm.istack) - 1
 	// Get the top element of the stack
 	element := vm.istack[index]
@@ -64,77 +79,91 @@ func (vm *WVM) IPOP() int {
 	return element
 }
 
-func (vm *WVM) IDUP() {
+func (vm *WVM) IDUP(value interface{}) interface{} {
 	vm.istack = append(vm.istack, vm.istack[len(vm.istack)-1])
+	return nil
 }
-func (vm *WVM) FDUP() {
+
+func (vm *WVM) FDUP(value interface{}) interface{} {
 	vm.fstack = append(vm.fstack, vm.fstack[len(vm.fstack)-1])
+	return nil
 }
 
-func (vm *WVM) IADD() {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) IADD(value interface{}) interface{} {
+	right := (vm.IPOP(nil)).(int)
+	left := (vm.IPOP(nil)).(int)
 	vm.IPUSH(left + right)
+	return nil
 }
 
-func (vm *WVM) FADD() {
-	right := vm.FPOP()
-	left := vm.FPOP()
+func (vm *WVM) FADD(value interface{}) interface{} {
+	right := (vm.FPOP(nil)).(float64)
+	left := (vm.FPOP(nil)).(float64)
 	vm.FPUSH(left + right)
+	return nil
 }
 
-func (vm *WVM) ISUB() {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) ISUB(value interface{}) interface{} {
+	right := (vm.IPOP(nil)).(int)
+	left := (vm.IPOP(nil)).(int)
 	vm.IPUSH(left - right)
+	return nil
 }
 
-func (vm *WVM) FSUB() {
-	right := vm.FPOP()
-	left := vm.FPOP()
+func (vm *WVM) FSUB(value interface{}) interface{} {
+	right := (vm.FPOP(nil)).(float64)
+	left := (vm.FPOP(nil)).(float64)
 	vm.FPUSH(left - right)
+	return nil
 }
 
-func (vm *WVM) IMUL() {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) IMUL(value interface{}) interface{} {
+	right := (vm.IPOP(nil)).(int)
+	left := (vm.IPOP(nil)).(int)
 	vm.IPUSH(left * right)
+	return nil
 }
 
-func (vm *WVM) FMUL() {
-	right := vm.FPOP()
-	left := vm.FPOP()
+func (vm *WVM) FMUL(value interface{}) interface{} {
+	right := (vm.FPOP(nil)).(float64)
+	left := (vm.FPOP(nil)).(float64)
 	vm.FPUSH(left * right)
+	return nil
 }
 
-func (vm *WVM) IDIV() {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) IDIV(value interface{}) interface{} {
+	right := (vm.IPOP(nil)).(int)
+	left := (vm.IPOP(nil)).(int)
 	vm.IPUSH(left / right)
+	return nil
 }
 
-func (vm *WVM) FDIV() {
-	right := vm.FPOP()
-	left := vm.FPOP()
+func (vm *WVM) FDIV(value interface{}) interface{} {
+	right := (vm.FPOP(nil)).(float64)
+	left := (vm.FPOP(nil)).(float64)
 	vm.FPUSH(left / right)
+	return nil
 }
 
-func (vm *WVM) AND() {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) AND(value interface{}) interface{} {
+	right := (vm.IPOP(nil)).(int)
+	left := (vm.IPOP(nil)).(int)
 	vm.IPUSH(left & right)
+	return nil
 }
 
-func (vm *WVM) OR() {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) OR(value interface{}) interface{} {
+	right := vm.IPOP(nil).(int)
+	left := vm.IPOP(nil).(int)
 	vm.IPUSH(left | right)
+	return nil
 }
 
-func (vm *WVM) XOR() {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) XOR(value interface{}) interface{} {
+	right := (vm.IPOP(nil)).(int)
+	left := (vm.IPOP(nil)).(int)
 	vm.IPUSH(left ^ right)
+	return nil
 }
 
 func BoolToInt(b bool) int {
@@ -144,9 +173,10 @@ func BoolToInt(b bool) int {
 	return 0
 }
 
-func (vm *WVM) ICMP(op string) {
-	right := vm.IPOP()
-	left := vm.IPOP()
+func (vm *WVM) ICMP(value interface{}) interface{} {
+	right := (vm.IPOP(nil)).(int)
+	left := (vm.IPOP(nil)).(int)
+	op := value.(string)
 	switch op {
 	case "<":
 		vm.IPUSH(BoolToInt(left < right))
@@ -161,11 +191,13 @@ func (vm *WVM) ICMP(op string) {
 	case "!=":
 		vm.IPUSH(BoolToInt(left != right))
 	}
+	return nil
 }
 
-func (vm *WVM) FCMP(op string) {
-	right := vm.FPOP()
-	left := vm.FPOP()
+func (vm *WVM) FCMP(value interface{}) interface{} {
+	right := (vm.FPOP(nil)).(float64)
+	left := (vm.FPOP(nil)).(float64)
+	op := value.(string)
 	switch op {
 	case "<":
 		vm.IPUSH(BoolToInt(left < right))
@@ -180,22 +212,20 @@ func (vm *WVM) FCMP(op string) {
 	case "!=":
 		vm.IPUSH(BoolToInt(left != right))
 	}
+	return nil
 }
 
-func (vm *WVM) FPUSH(value float64) {
-	vm.fstack = append(vm.fstack, value)
+func (vm *WVM) FPUSH(value interface{}) interface{} {
+	vm.fstack = append(vm.fstack, value.(float64))
+	return nil
 }
 
-//func (vm *WVM) ITOF() {
-//	value := vm.IPOP()
-//	vm.FPUSH(float64(value))
-//}
-
-func (vm *WVM) INEG() {
-	vm.IPUSH(-vm.IPOP())
+func (vm *WVM) INEG(value interface{}) interface{} {
+	vm.IPUSH(-(vm.IPOP(nil).(int)))
+	return nil
 }
 
-func (vm *WVM) FPOP() float64 {
+func (vm *WVM) FPOP(value interface{}) interface{} {
 	index := len(vm.fstack) - 1
 	// Get the top element of the stack
 	element := vm.fstack[index]
@@ -204,95 +234,173 @@ func (vm *WVM) FPOP() float64 {
 	return element
 }
 
-func (vm *WVM) FNEG() {
-	vm.FPUSH(-vm.FPOP())
+func (vm *WVM) FNEG(value interface{}) interface{} {
+	vm.FPUSH(-(vm.FPOP(nil)).(float64))
+	return nil
 }
 
-func (vm *WVM) PRINTI() {
-	fmt.Println(vm.IPOP())
+func (vm *WVM) PRINTI(value interface{}) interface{} {
+	fmt.Println((vm.IPOP(nil)).(int))
+	return nil
 }
 
-func (vm *WVM) PRINTF() {
-	fmt.Println(vm.FPOP())
+func (vm *WVM) PRINTF(value interface{}) interface{} {
+	fmt.Println((vm.FPOP(nil)).(float64))
+	return nil
 }
 
-func (vm *WVM) PRINTB() {
-	if vm.IPOP() == 0 {
+func (vm *WVM) PRINTB(value interface{}) interface{} {
+	if (vm.IPOP(nil)).(int) == 0 {
 		fmt.Println("false")
 	} else {
 		fmt.Println("true")
 	}
+	return nil
 }
 
-func (vm *WVM) PRINTC() {
-	fmt.Printf("%c", rune(vm.IPOP()))
+func (vm *WVM) PRINTC(value interface{}) interface{} {
+	fmt.Printf("%c", rune((vm.IPOP(nil)).(int)))
+	return nil
 }
 
-func (vm *WVM) FTOI() {
-	vm.IPUSH(int(vm.FPOP()))
+func (vm *WVM) FTOI(value interface{}) interface{} {
+	vm.IPUSH(int((vm.FPOP(nil)).(float64)))
+	return nil
 }
 
-func (vm *WVM) ITOF() {
-	vm.FPUSH(float64(vm.IPOP()))
+func (vm *WVM) ITOF(value interface{}) interface{} {
+	vm.FPUSH(float64((vm.IPOP(nil)).(int)))
+	return nil
 }
 
-func (vm *WVM) ISTORE_LOCAL(slot int) {
-	vm.frame.locals[slot] = vm.IPOP()
+func (vm *WVM) ISTORE_LOCAL(value interface{}) interface{} {
+	slot := value.(int)
+	vm.frame.locals[slot] = vm.IPOP(nil).(int)
+	return nil
 }
 
-func (vm *WVM) ILOAD_LOCAL(slot int) {
+func (vm *WVM) ILOAD_LOCAL(value interface{}) interface{} {
+	slot := value.(int)
 	vm.IPUSH(vm.frame.locals[slot].(int))
+	return nil
 }
 
-func (vm *WVM) FLOAD_LOCAL(slot int) {
+func (vm *WVM) FLOAD_LOCAL(value interface{}) interface{} {
+	slot := value.(int)
 	vm.FPUSH(vm.frame.locals[slot].(float64))
+	return nil
 }
 
-func (vm *WVM) FSTORE_LOCAL(slot int) {
-	vm.frame.locals[slot] = vm.FPOP()
+func (vm *WVM) FSTORE_LOCAL(value interface{}) interface{} {
+	slot := value.(int)
+	vm.frame.locals[slot] = vm.FPOP(nil).(float64)
+	return nil
 }
 
-func (vm *WVM) ISTORE_GLOBAL(slot int) {
-	vm.globals[slot] = vm.IPOP()
+func (vm *WVM) ISTORE_GLOBAL(value interface{}) interface{} {
+	slot := value.(int)
+	vm.globals[slot] = vm.IPOP(nil).(int)
+	return nil
 }
 
-func (vm *WVM) ILOAD_GLOBAL(slot int) {
+func (vm *WVM) ILOAD_GLOBAL(value interface{}) interface{} {
+	slot := value.(int)
 	vm.IPUSH(vm.globals[slot].(int))
+	return nil
 }
 
-func (vm *WVM) FLOAD_GLOBAL(slot int) {
+func (vm *WVM) FLOAD_GLOBAL(value interface{}) interface{} {
+	slot := value.(int)
 	vm.FPUSH(vm.globals[slot].(float64))
+	return nil
 }
 
-func (vm *WVM) GOTO(name int) {
+func (vm *WVM) GOTO(value interface{}) interface{} {
+	name := value.(int)
 	vm.pc = vm.labels[name]
+	return nil
 }
 
-func (vm *WVM) BZ(name int) {
-	if vm.IPOP() == 0 {
+func (vm *WVM) BZ(value interface{}) interface{} {
+	name := value.(int)
+	if vm.IPOP(nil).(int) == 0 {
 		vm.pc = vm.labels[name]
 	}
+	return nil
 }
 
-func (vm *WVM) HALT() {
+func (vm *WVM) HALT(value interface{}) interface{} {
 	vm.running = false
+	return nil
 }
 
-func (vm *WVM) LABEL(_ int) {
+func (vm *WVM) LABEL(value interface{}) interface{} {
+	return nil
 }
 
-func (vm *WVM) FSTORE_GLOBAL(slot int) {
-	vm.globals[slot] = vm.FPOP()
+func (vm *WVM) FSTORE_GLOBAL(value interface{}) interface{} {
+	slot := value.(int)
+	vm.globals[slot] = vm.FPOP(nil).(float64)
+	return nil
 }
 
-func (vm *WVM) CALL(label int) {
+func (vm *WVM) CALL(value interface{}) interface{} {
+	label := value.(int)
 	vm.frame = &Frame{vm.pc, make(map[int]interface{}), vm.frame}
 	vm.pc = vm.labels[label]
+	return nil
 }
 
-func (vm *WVM) RETURN() {
+func (vm *WVM) RETURN(value interface{}) interface{} {
 	vm.pc = vm.frame.returnPc
 	vm.frame = vm.frame.prevFrame
+	return nil
+}
+
+func (vm *WVM) getOpcodeMap() map[string]OpFunc {
+	return map[string]OpFunc{
+		"IPUSH":         vm.IPUSH,
+		"IPOP":          vm.IPOP,
+		"IDUP":          vm.IDUP,
+		"FDUP":          vm.FDUP,
+		"IADD":          vm.IADD,
+		"FADD":          vm.FADD,
+		"ISUB":          vm.ISUB,
+		"FSUB":          vm.FSUB,
+		"IMUL":          vm.IMUL,
+		"FMUL":          vm.FMUL,
+		"IDIV":          vm.IDIV,
+		"FDIV":          vm.FDIV,
+		"AND":           vm.AND,
+		"OR":            vm.OR,
+		"XOR":           vm.XOR,
+		"ICMP":          vm.ICMP,
+		"FCMP":          vm.FCMP,
+		"FPUSH":         vm.FPUSH,
+		"INEG":          vm.INEG,
+		"FPOP":          vm.FPOP,
+		"FNEG":          vm.FNEG,
+		"PRINTI":        vm.PRINTI,
+		"PRINTF":        vm.PRINTF,
+		"PRINTB":        vm.PRINTB,
+		"PRINTC":        vm.PRINTC,
+		"FTOI":          vm.FTOI,
+		"ITOF":          vm.ITOF,
+		"ISTORE_LOCAL":  vm.ISTORE_LOCAL,
+		"ILOAD_LOCAL":   vm.ILOAD_LOCAL,
+		"FLOAD_LOCAL":   vm.FLOAD_LOCAL,
+		"FSTORE_LOCAL":  vm.FSTORE_LOCAL,
+		"ISTORE_GLOBAL": vm.ISTORE_GLOBAL,
+		"ILOAD_GLOBAL":  vm.ILOAD_GLOBAL,
+		"FLOAD_GLOBAL":  vm.FLOAD_GLOBAL,
+		"GOTO":          vm.GOTO,
+		"BZ":            vm.BZ,
+		"HALT":          vm.HALT,
+		"LABEL":         vm.LABEL,
+		"FSTORE_GLOBAL": vm.FSTORE_GLOBAL,
+		"CALL":          vm.CALL,
+		"RETURN":        vm.RETURN,
+	}
 }
 
 type Context struct {
