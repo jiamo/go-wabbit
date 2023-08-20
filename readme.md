@@ -23,7 +23,7 @@ The course itself is also continuously evolving.
     go run cmd/interpreter/interpreter_main.go tests/Programs/23_mandel.wb
 
 ## test
-    go test wabbit-go/tests
+    go test -v wabbit-go/tests
 
 ## TODO 
 - [x] refactor code. Such like the implement of context. Do golang have good way to do it?

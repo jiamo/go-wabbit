@@ -33,14 +33,7 @@ type Instruction struct {
 func (vm *WVM) run(instructions []Instruction) {
 	vm.pc = 0
 	vm.running = true
-	vm.labels = make(map[int]int)
 
-	// TODO we may need optimse this pass In WvmContext
-	for i, instruction := range instructions {
-		if instruction.opcode == "LABEL" {
-			vm.labels[instruction.args.(int)] = i
-		}
-	}
 	for vm.running {
 		op := instructions[vm.pc].opcode
 		args := instructions[vm.pc].args
@@ -305,6 +298,7 @@ func (vm *WVM) RETURN() {
 type Context struct {
 	env       *common.ChainMap
 	code      []Instruction
+	labels    map[int]int
 	nglobals  int
 	nlocals   int
 	nlabels   int
@@ -315,9 +309,10 @@ type Context struct {
 
 func NewWVMContext() *Context {
 	return &Context{
-		env:   common.NewChainMap(),
-		scope: "global",
-		code:  make([]Instruction, 0),
+		env:    common.NewChainMap(),
+		scope:  "global",
+		code:   make([]Instruction, 0),
+		labels: make(map[int]int),
 	}
 }
 
@@ -364,6 +359,13 @@ func (ctx *Context) NewScope(do func()) {
 	do()
 }
 
+func (ctx *Context) NewInstruction(instruction Instruction) {
+	ctx.code = append(ctx.code, instruction)
+	if instruction.opcode == "LABEL" {
+		ctx.labels[instruction.args.(int)] = len(ctx.code) - 1
+	}
+}
+
 func Wvm(program *model.Program) error {
 	wctx := NewWVMContext()
 	_ = InterpretNode(program.Model, wctx) // generate is InterpretNode in the same meaning
@@ -371,8 +373,10 @@ func Wvm(program *model.Program) error {
 		globals: make(map[int]interface{}),
 	}
 
-	wctx.code = append(wctx.code, Instruction{"HALT", nil})
+	//wctx.code = append(wctx.code, Instruction{"HALT", nil})
+	wctx.NewInstruction(Instruction{"HALT", nil})
 	log.Debug(wctx.code)
+	wvm.labels = wctx.labels
 	wvm.run(wctx.code)
 
 	return nil
@@ -381,17 +385,17 @@ func Wvm(program *model.Program) error {
 func InterpretNode(node model.Node, context *Context) string {
 	switch v := node.(type) {
 	case *model.Integer:
-		context.code = append(context.code, Instruction{"IPUSH", v.Value})
+		context.NewInstruction(Instruction{"IPUSH", v.Value})
 		return "int"
 	case *model.Float:
-		context.code = append(context.code, Instruction{"FPUSH", v.Value})
+		context.NewInstruction(Instruction{"FPUSH", v.Value})
 		return "float"
 	case *model.Character:
 		unquoted, err := strconv.Unquote(v.Value)
 		if err != nil {
 			panic(err)
 		}
-		context.code = append(context.code, Instruction{"IPUSH", int(rune(unquoted[0]))})
+		context.NewInstruction(Instruction{"IPUSH", int(rune(unquoted[0]))})
 		return "char"
 	case *model.Name:
 		log.Debugf("*model.Name %v env %v code %v", v.Text, context.env, context.code)
@@ -399,15 +403,15 @@ func InterpretNode(node model.Node, context *Context) string {
 		// bool int char using int
 		if value.Scope == "global" {
 			if value.Type == "float" {
-				context.code = append(context.code, Instruction{"FLOAD_GLOBAL", value.Slot})
+				context.NewInstruction(Instruction{"FLOAD_GLOBAL", value.Slot})
 			} else {
-				context.code = append(context.code, Instruction{"ILOAD_GLOBAL", value.Slot})
+				context.NewInstruction(Instruction{"ILOAD_GLOBAL", value.Slot})
 			}
 		} else if value.Scope == "local" {
 			if value.Type == "float" {
-				context.code = append(context.code, Instruction{"FLOAD_LOCAL", value.Slot})
+				context.NewInstruction(Instruction{"FLOAD_LOCAL", value.Slot})
 			} else {
-				context.code = append(context.code, Instruction{"ILOAD_LOCAL", value.Slot})
+				context.NewInstruction(Instruction{"ILOAD_LOCAL", value.Slot})
 			}
 		}
 		return value.Type
@@ -415,14 +419,11 @@ func InterpretNode(node model.Node, context *Context) string {
 	case *model.NameType:
 		return v.Name
 	case *model.NameBool:
-		context.code = append(context.code, Instruction{"IPUSH", BoolToInt(v.Name == "true")})
-		//return &WabbitValue{Type: "bool", Value: v.Name == "true"}
+		context.NewInstruction(Instruction{"IPUSH", BoolToInt(v.Name == "true")})
 		return "bool"
 	case *model.IntegerType:
 		return "int"
-		//return &WabbitValue{Type: "type", Value: "int"}
 	case *model.FloatType:
-		//return &WabbitValue{Type: "type", Value: "float"}
 		return "float"
 	case *model.Add:
 		left := InterpretNode(v.Left, context)
@@ -430,12 +431,10 @@ func InterpretNode(node model.Node, context *Context) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"IADD", nil})
+			context.NewInstruction(Instruction{"IADD", nil})
 			return "int"
-			//return &WabbitValue{"int", left.Value.(int) + right.Value.(int)}
 		} else if left == "float" && right == "float" {
-			//return &WabbitValue{"float", left.Value.(float64) + right.Value.(float64)}
-			context.code = append(context.code, Instruction{"FADD", nil})
+			context.NewInstruction(Instruction{"FADD", nil})
 			return "float"
 		} else {
 			// we think it's a type error
@@ -449,11 +448,10 @@ func InterpretNode(node model.Node, context *Context) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"IMUL", nil})
+			context.NewInstruction(Instruction{"IMUL", nil})
 			return "int"
-			//return &WabbitValue{"int", left.Value.(int) * right.Value.(int)}
 		} else if left == "float" && right == "float" {
-			context.code = append(context.code, Instruction{"FMUL", nil})
+			context.NewInstruction(Instruction{"FMUL", nil})
 			return "float"
 		} else {
 			// we think it's a type error
@@ -466,11 +464,10 @@ func InterpretNode(node model.Node, context *Context) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"ISUB", nil})
+			context.NewInstruction(Instruction{"ISUB", nil})
 			return "int"
-			//return &WabbitValue{"int", left.Value.(int) - right.Value.(int)}
 		} else if left == "float" && right == "float" {
-			context.code = append(context.code, Instruction{"FSUB", nil})
+			context.NewInstruction(Instruction{"FSUB", nil})
 			return "float"
 		} else {
 			// we think it's a type error
@@ -483,10 +480,10 @@ func InterpretNode(node model.Node, context *Context) string {
 
 		// we should check the type of left and right go we can't make interface + interface
 		if left == "int" && right == "int" {
-			context.code = append(context.code, Instruction{"IDIV", nil})
+			context.NewInstruction(Instruction{"IDIV", nil})
 			return "int"
 		} else if left == "float" && right == "float" {
-			context.code = append(context.code, Instruction{"FDIV", nil})
+			context.NewInstruction(Instruction{"FDIV", nil})
 			return "float"
 		} else {
 			// we think it's a type error
@@ -497,11 +494,9 @@ func InterpretNode(node model.Node, context *Context) string {
 	case *model.Neg:
 		right := InterpretNode(v.Operand, context)
 		if right == "int" {
-			//return &WabbitValue{"int", -right.Value.(int)}
-			context.code = append(context.code, Instruction{"INEG", nil})
+			context.NewInstruction(Instruction{"INEG", nil})
 		} else if right == "float" {
-			//return &WabbitValue{"float", -right.Value.(float64)}
-			context.code = append(context.code, Instruction{"FNEG", nil})
+			context.NewInstruction(Instruction{"FNEG", nil})
 		} else {
 			// we think it's a type error
 			//return &WabbitValue{"error", "type error"}
@@ -514,8 +509,8 @@ func InterpretNode(node model.Node, context *Context) string {
 	case *model.Not:
 		right := InterpretNode(v.Operand, context)
 		if right == "bool" {
-			context.code = append(context.code, Instruction{"IPUSH", 1})
-			context.code = append(context.code, Instruction{"XOR", nil})
+			context.NewInstruction(Instruction{"IPUSH", 1})
+			context.NewInstruction(Instruction{"XOR", nil})
 		} else {
 			// we think it's a type error
 			panic("type different")
@@ -530,24 +525,24 @@ func InterpretNode(node model.Node, context *Context) string {
 			valtype = v.Type.Type()
 			// the default value init
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FPUSH", 0.0})
+				context.NewInstruction(Instruction{"FPUSH", 0.0})
 			} else {
-				context.code = append(context.code, Instruction{"IPUSH", 0})
+				context.NewInstruction(Instruction{"IPUSH", 0})
 			}
 		}
 		scope, slot := context.NewVariable()
 		context.Define(v.Name.Text, &WVMVar{Type: valtype, Scope: scope, Slot: slot}) // this is for context rember
 		if scope == "global" {
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", slot})
+				context.NewInstruction(Instruction{"FSTORE_GLOBAL", slot})
 			} else {
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
+				context.NewInstruction(Instruction{"ISTORE_GLOBAL", slot})
 			}
 		} else if scope == "local" {
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_LOCAL", slot})
+				context.NewInstruction(Instruction{"FSTORE_LOCAL", slot})
 			} else {
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
+				context.NewInstruction(Instruction{"ISTORE_LOCAL", slot})
 			}
 		}
 		return ""
@@ -558,15 +553,15 @@ func InterpretNode(node model.Node, context *Context) string {
 		context.Define(v.Name.Text, &WVMVar{Type: valtype, Scope: scope, Slot: slot}) // this is for context rember
 		if scope == "global" {
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", slot})
+				context.NewInstruction(Instruction{"FSTORE_GLOBAL", slot})
 			} else {
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", slot})
+				context.NewInstruction(Instruction{"ISTORE_GLOBAL", slot})
 			}
 		} else if scope == "local" {
 			if valtype == "float" {
-				context.code = append(context.code, Instruction{"FSTORE_LOCAL", slot})
+				context.NewInstruction(Instruction{"FSTORE_LOCAL", slot})
 			} else {
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", slot})
+				context.NewInstruction(Instruction{"ISTORE_LOCAL", slot})
 			}
 		}
 		return ""
@@ -575,28 +570,26 @@ func InterpretNode(node model.Node, context *Context) string {
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", "<"})
+			context.NewInstruction(Instruction{"ICMP", "<"})
 		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "<"})
+			context.NewInstruction(Instruction{"FCMP", "<"})
 		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "<"})
+			context.NewInstruction(Instruction{"ICMP", "<"})
 		} else {
-			panic("type differnt")
+			panic("type different")
 		}
 		return "bool"
 	case *model.Le:
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", "<="})
+			context.NewInstruction(Instruction{"ICMP", "<="})
 		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "<="})
+			context.NewInstruction(Instruction{"FCMP", "<="})
 		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "<="})
+			context.NewInstruction(Instruction{"ICMP", "<="})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "<="})
+			context.NewInstruction(Instruction{"ICMP", "<="})
 		} else {
 			panic("type different")
 		}
@@ -605,14 +598,13 @@ func InterpretNode(node model.Node, context *Context) string {
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", ">"})
+			context.NewInstruction(Instruction{"ICMP", ">"})
 		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", ">"})
+			context.NewInstruction(Instruction{"FCMP", ">"})
 		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", ">"})
+			context.NewInstruction(Instruction{"ICMP", ">"})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", ">"})
+			context.NewInstruction(Instruction{"ICMP", ">"})
 		} else {
 			panic("type different")
 		}
@@ -621,14 +613,13 @@ func InterpretNode(node model.Node, context *Context) string {
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", ">="})
+			context.NewInstruction(Instruction{"ICMP", ">="})
 		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", ">="})
+			context.NewInstruction(Instruction{"FCMP", ">="})
 		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", ">="})
+			context.NewInstruction(Instruction{"ICMP", ">="})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", ">="})
+			context.NewInstruction(Instruction{"ICMP", ">="})
 		} else {
 			panic("type different")
 		}
@@ -637,13 +628,13 @@ func InterpretNode(node model.Node, context *Context) string {
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		if left == "int" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+			context.NewInstruction(Instruction{"ICMP", "=="})
 		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "=="})
+			context.NewInstruction(Instruction{"FCMP", "=="})
 		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+			context.NewInstruction(Instruction{"ICMP", "=="})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "=="})
+			context.NewInstruction(Instruction{"ICMP", "=="})
 		} else {
 			panic("type different") // we can just using else For simple
 		}
@@ -652,14 +643,13 @@ func InterpretNode(node model.Node, context *Context) string {
 		left := InterpretNode(v.Left, context)
 		_ = InterpretNode(v.Right, context)
 		if left == "int" {
-			//return &WabbitValue{Type: "bool", Value: left.Value.(int) < right.Value.(int)}
-			context.code = append(context.code, Instruction{"ICMP", "!="})
+			context.NewInstruction(Instruction{"ICMP", "!="})
 		} else if left == "float" {
-			context.code = append(context.code, Instruction{"FCMP", "!="})
+			context.NewInstruction(Instruction{"FCMP", "!="})
 		} else if left == "char" {
-			context.code = append(context.code, Instruction{"ICMP", "!="})
+			context.NewInstruction(Instruction{"ICMP", "!="})
 		} else if left == "bool" {
-			context.code = append(context.code, Instruction{"ICMP", "!="})
+			context.NewInstruction(Instruction{"ICMP", "!="})
 		} else {
 			panic("type different")
 		}
@@ -670,26 +660,27 @@ func InterpretNode(node model.Node, context *Context) string {
 		or_continue_label := context.NewLabel()
 
 		_ = InterpretNode(v.Left, context)
-		context.code = append(context.code, Instruction{"BZ", or_continue_label})
-		context.code = append(context.code, Instruction{"IPUSH", 1})
-		context.code = append(context.code, Instruction{"GOTO", done_label})
-		context.code = append(context.code, Instruction{"LABEL", or_continue_label})
+		context.NewInstruction(Instruction{"BZ", or_continue_label})
+		context.NewInstruction(Instruction{"IPUSH", 1})
+		context.NewInstruction(Instruction{"GOTO", done_label})
+		context.NewInstruction(Instruction{"LABEL", or_continue_label})
+
 		_ = InterpretNode(v.Right, context)
-		context.code = append(context.code, Instruction{"LABEL", done_label})
-		//context.code = append(context.code, Instruction{"OR", nil})
+		context.NewInstruction(Instruction{"LABEL", done_label})
 		return "bool"
 
 	case *model.LogAnd:
 		done_label := context.NewLabel()
 		and_false_label := context.NewLabel()
 		_ = InterpretNode(v.Left, context)
-		context.code = append(context.code, Instruction{"BZ", and_false_label})
-		_ = InterpretNode(v.Right, context)
-		context.code = append(context.code, Instruction{"GOTO", done_label})
-		context.code = append(context.code, Instruction{"LABEL", and_false_label})
-		context.code = append(context.code, Instruction{"IPUSH", 0})
+		context.NewInstruction(Instruction{"BZ", and_false_label})
 
-		context.code = append(context.code, Instruction{"LABEL", done_label})
+		_ = InterpretNode(v.Right, context)
+		context.NewInstruction(Instruction{"GOTO", done_label})
+		context.NewInstruction(Instruction{"LABEL", and_false_label})
+		context.NewInstruction(Instruction{"IPUSH", 0})
+		context.NewInstruction(Instruction{"LABEL", done_label})
+
 		return "bool" // no need or and any more
 
 	case *model.Assignment:
@@ -698,19 +689,19 @@ func InterpretNode(node model.Node, context *Context) string {
 		wvmvar := context.Lookup(v.Location.(*model.Name).Text)
 		if wvmvar.Scope == "global" {
 			if wvmvar.Type == "float" {
-				context.code = append(context.code, Instruction{"FDUP", nil})
-				context.code = append(context.code, Instruction{"FSTORE_GLOBAL", wvmvar.Slot})
+				context.NewInstruction(Instruction{"FDUP", nil})
+				context.NewInstruction(Instruction{"FSTORE_GLOBAL", wvmvar.Slot})
 			} else {
-				context.code = append(context.code, Instruction{"IDUP", nil})
-				context.code = append(context.code, Instruction{"ISTORE_GLOBAL", wvmvar.Slot})
+				context.NewInstruction(Instruction{"IDUP", nil})
+				context.NewInstruction(Instruction{"ISTORE_GLOBAL", wvmvar.Slot})
 			}
 		} else {
 			if wvmvar.Type == "float" {
-				context.code = append(context.code, Instruction{"FDUP", nil})
-				context.code = append(context.code, Instruction{"FSTORE_LOCAL", wvmvar.Slot})
+				context.NewInstruction(Instruction{"FDUP", nil})
+				context.NewInstruction(Instruction{"FSTORE_LOCAL", wvmvar.Slot})
 			} else {
-				context.code = append(context.code, Instruction{"IDUP", nil})
-				context.code = append(context.code, Instruction{"ISTORE_LOCAL", wvmvar.Slot})
+				context.NewInstruction(Instruction{"IDUP", nil})
+				context.NewInstruction(Instruction{"ISTORE_LOCAL", wvmvar.Slot})
 			}
 		}
 		return val
@@ -719,13 +710,13 @@ func InterpretNode(node model.Node, context *Context) string {
 		value := InterpretNode(v.Value, context)
 		switch value {
 		case "char":
-			context.code = append(context.code, Instruction{"PRINTC", nil})
+			context.NewInstruction(Instruction{"PRINTC", nil})
 		case "bool":
-			context.code = append(context.code, Instruction{"PRINTB", nil})
+			context.NewInstruction(Instruction{"PRINTB", nil})
 		case "int":
-			context.code = append(context.code, Instruction{"PRINTI", nil})
+			context.NewInstruction(Instruction{"PRINTI", nil})
 		case "float":
-			context.code = append(context.code, Instruction{"PRINTF", nil})
+			context.NewInstruction(Instruction{"PRINTF", nil})
 		default:
 			log.Debugf("%v:%v", context.code, value)
 			panic("wrong type")
@@ -736,13 +727,12 @@ func InterpretNode(node model.Node, context *Context) string {
 		for _, statement := range v.Statements {
 			// do we need pop to keep stack blance?
 			if result == "float" {
-				context.code = append(context.code, Instruction{"FPOP", nil})
+				context.NewInstruction(Instruction{"FPOP", nil})
 			} else if result == "int" {
-				context.code = append(context.code, Instruction{"IPOP", nil})
+				context.NewInstruction(Instruction{"IPOP", nil})
 			}
 			result = InterpretNode(statement, context)
 			// need check break return too
-
 		}
 		return result
 
@@ -757,39 +747,39 @@ func InterpretNode(node model.Node, context *Context) string {
 		else_label := context.NewLabel()
 		merge_label := context.NewLabel()
 		InterpretNode(v.Test, context)
-		context.code = append(context.code, Instruction{"BZ", else_label})
-		context.code = append(context.code, Instruction{"GOTO", then_label})
-		context.code = append(context.code, Instruction{"LABEL", then_label})
+
+		context.NewInstruction(Instruction{"BZ", else_label})
+		context.NewInstruction(Instruction{"GOTO", then_label})
+		context.NewInstruction(Instruction{"LABEL", then_label})
 
 		context.NewScope(
 			func() {
 				InterpretNode(&v.Consequence, context)
-				context.code = append(context.code, Instruction{"GOTO", merge_label})
-				context.code = append(context.code, Instruction{"LABEL", else_label})
+				context.NewInstruction(Instruction{"GOTO", merge_label})
+				context.NewInstruction(Instruction{"LABEL", else_label})
 			},
 		)
 		if v.Alternative != nil {
 			context.NewScope(
 				func() {
 					InterpretNode(v.Alternative, context)
-					context.code = append(context.code, Instruction{"GOTO", merge_label})
+					context.NewInstruction(Instruction{"GOTO", merge_label})
 				},
 			)
 		}
-		context.code = append(context.code, Instruction{"GOTO", merge_label})
-		context.code = append(context.code, Instruction{"LABEL", merge_label})
-
+		context.NewInstruction(Instruction{"GOTO", merge_label})
+		context.NewInstruction(Instruction{"LABEL", merge_label})
 	case *model.BreakStatement:
 		// we need scope for level break
 		val := context.Lookup("break") // fake using type as label
-		context.code = append(context.code, Instruction{"GOTO", val.Slot})
+		context.NewInstruction(Instruction{"GOTO", val.Slot})
 	case *model.ContinueStatement:
 		val := context.Lookup("continue") // fake using type as label
-		context.code = append(context.code, Instruction{"GOTO", val.Slot})
+		context.NewInstruction(Instruction{"GOTO", val.Slot})
 
 	case *model.ReturnStatement:
 		value := InterpretNode(v.Value, context)
-		context.code = append(context.code, Instruction{"RETURN", nil})
+		context.NewInstruction(Instruction{"RETURN", nil})
 		return value
 
 	case *model.WhileStatement:
@@ -797,27 +787,30 @@ func InterpretNode(node model.Node, context *Context) string {
 		body_label := context.NewLabel()
 		exit_label := context.NewLabel()
 
-		context.code = append(context.code, Instruction{"GOTO", test_label})
-		context.code = append(context.code, Instruction{"LABEL", test_label})
+		context.NewInstruction(Instruction{"GOTO", test_label})
+		context.NewInstruction(Instruction{"LABEL", test_label})
 		InterpretNode(v.Test, context)
-		context.code = append(context.code, Instruction{"BZ", exit_label})
-		context.code = append(context.code, Instruction{"GOTO", body_label})
-		context.code = append(context.code, Instruction{"LABEL", body_label})
+		context.NewInstruction(Instruction{"BZ", exit_label})
+		context.NewInstruction(Instruction{"GOTO", body_label})
+		context.NewInstruction(Instruction{"LABEL", body_label})
+
 		context.NewScope(func() {
 			context.Define("break", &WVMVar{"", "", exit_label})
 			context.Define("continue", &WVMVar{"", "", test_label})
 			InterpretNode(&v.Body, context)
-			context.code = append(context.code, Instruction{"GOTO", test_label})
+			context.NewInstruction(Instruction{"GOTO", test_label})
 
 		})
-		context.code = append(context.code, Instruction{"LABEL", exit_label})
+		context.NewInstruction(Instruction{"LABEL", exit_label})
 
 	case *model.FunctionDeclaration:
 
 		start_label := context.NewLabel()
 		end_label := context.NewLabel()
-		context.code = append(context.code, Instruction{"GOTO", end_label})
-		context.code = append(context.code, Instruction{"LABEL", start_label})
+
+		context.NewInstruction(Instruction{"GOTO", end_label})
+		context.NewInstruction(Instruction{"LABEL", start_label})
+
 		context.Define(v.Name.Text, &WVMVar{v.ReturnType.Type(), "", start_label}) //
 		context.NewScope(func() {
 			context.scope = "local"
@@ -828,14 +821,14 @@ func InterpretNode(node model.Node, context *Context) string {
 			for i := len(v.Parameters) - 1; i >= 0; i-- {
 				val := context.Lookup(v.Parameters[i].Name.Text)
 				if val.Type == "float" {
-					context.code = append(context.code, Instruction{"FSTORE_LOCAL", val.Slot})
+					context.NewInstruction(Instruction{"FSTORE_LOCAL", val.Slot})
 				} else if val.Type == "int" {
-					context.code = append(context.code, Instruction{"ISTORE_LOCAL", val.Slot})
+					context.NewInstruction(Instruction{"ISTORE_LOCAL", val.Slot})
 				}
 			}
 			InterpretNode(&v.Body, context)
 		})
-		context.code = append(context.code, Instruction{"LABEL", end_label})
+		context.NewInstruction(Instruction{"LABEL", end_label})
 		context.scope = "global"
 		if v.Name.Text == "main" {
 			context.haveMain = true
@@ -854,13 +847,13 @@ func InterpretNode(node model.Node, context *Context) string {
 		if name == "int" {
 			// only float need to cast
 			if argType == "float" {
-				context.code = append(context.code, Instruction{"FTOI", nil})
+				context.NewInstruction(Instruction{"FTOI", nil})
 			}
 			return "int"
 		}
 		if name == "float" {
 			if argType != "float" {
-				context.code = append(context.code, Instruction{"ITOF", nil})
+				context.NewInstruction(Instruction{"ITOF", nil})
 			}
 			return "float"
 		}
@@ -870,9 +863,8 @@ func InterpretNode(node model.Node, context *Context) string {
 		if name == "bool" {
 			return "bool"
 		}
-		context.code = append(context.code, Instruction{"CALL", funcVar.Slot})
+		context.NewInstruction(Instruction{"CALL", funcVar.Slot})
 		return funcVar.Type
-		// custom function and it should be....
 
 	case *model.CompoundExpression:
 		var val string

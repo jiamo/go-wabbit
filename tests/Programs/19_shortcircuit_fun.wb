@@ -1,0 +1,12 @@
+func run(x int) bool {
+	print x;
+	return true;
+}
+
+// does nothing
+print true || run(1);
+print false && run(2);
+
+// will print
+false || run(3);
+true && run(4);
