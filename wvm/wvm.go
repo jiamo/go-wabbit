@@ -354,6 +354,14 @@ func (vm *WVM) CALL(value interface{}) interface{} {
 	return nil
 }
 
+func (vm *WVM) TAIL_CALL(value interface{}) interface{} {
+	label := value.(int)
+	// vm.frame = &Frame{vm.pc, make(map[int]interface{}), vm.frame}
+	// we don't need save the frame, using the same one
+	vm.pc = vm.labels[label]
+	return nil
+}
+
 func (vm *WVM) RETURN(value interface{}) interface{} {
 	vm.pc = vm.frame.returnPc
 	vm.frame = vm.frame.prevFrame
@@ -402,8 +410,14 @@ func (vm *WVM) getOpcodeMap() map[string]OpFunc {
 		"LABEL":         vm.LABEL,
 		"FSTORE_GLOBAL": vm.FSTORE_GLOBAL,
 		"CALL":          vm.CALL,
+		"TAIL_CALL":     vm.TAIL_CALL,
 		"RETURN":        vm.RETURN,
 	}
+}
+
+type Function struct {
+	name      string
+	maybeTail bool
 }
 
 type Context struct {
@@ -415,6 +429,7 @@ type Context struct {
 	nlabels   int
 	scope     string
 	haveMain  bool
+	function  Function
 	parentEnv *map[string]interface{}
 }
 
@@ -892,6 +907,11 @@ func InterpretNode(node model.Node, context *Context) string {
 
 		// 需要在这里 v.Value 的解析，你将要立马返回
 		value := InterpretNode(v.Value, context)
+		if context.function.maybeTail &&
+			context.code[len(context.code)-1].opcode == "CALL" {
+			context.code[len(context.code)-1].opcode = "TAIL_CALL"
+		}
+
 		context.NewInstruction(Instruction{"RETURN", nil})
 		return value
 
@@ -918,6 +938,10 @@ func InterpretNode(node model.Node, context *Context) string {
 
 	case *model.FunctionDeclaration:
 
+		oldfuc := context.function
+		context.function = Function{
+			name: v.Name.Text,
+		}
 		start_label := context.NewLabel()
 		end_label := context.NewLabel()
 
@@ -942,6 +966,7 @@ func InterpretNode(node model.Node, context *Context) string {
 			InterpretNode(&v.Body, context)
 		})
 		context.NewInstruction(Instruction{"LABEL", end_label})
+		context.function = oldfuc
 		context.scope = "global"
 		if v.Name.Text == "main" {
 			context.haveMain = true
@@ -977,6 +1002,7 @@ func InterpretNode(node model.Node, context *Context) string {
 		if name == "bool" {
 			return "bool"
 		}
+		context.function.maybeTail = context.function.name == name
 		context.NewInstruction(Instruction{"CALL", funcVar.Slot})
 		return funcVar.Type
 
