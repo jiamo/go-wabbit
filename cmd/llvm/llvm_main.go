@@ -31,7 +31,7 @@ func main() {
 		log.Fatalf("Failed to write to out.ll: %v", err)
 	}
 
-	cmd := exec.Command("clang", "runtime.c", "out.ll")
+	cmd := exec.Command("clang", "-O3", "runtime.c", "out.ll")
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to run clang: %v", err)
 	}

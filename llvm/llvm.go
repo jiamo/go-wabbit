@@ -31,7 +31,7 @@ type Function struct {
 
 var _typemap = map[string]string{
 	"":      "void",
-	"int":   "i32",
+	"int":   "i64",
 	"float": "double",
 	"bool":  "i1",
 	"char":  "i8",
@@ -102,7 +102,7 @@ func LLVM(program *model.Program) string {
 	context := &Context{
 		N: 0,
 		globals: []string{
-			"declare void @\"_printi\"(i32 %\".1\")",
+			"declare void @\"_printi\"(i64 %\".1\")",
 			"declare void @\"_printf\"(double %\".1\")",
 			"declare void @\"_printb\"(i1 %\".1\")",
 			"declare void @\"_printc\"(i8 %\".1\")",
@@ -118,7 +118,7 @@ func LLVM(program *model.Program) string {
 	}
 	context.function.code = append(context.function.code, "entry:")
 	_ = InterpretNode(program.Model, context) // generate is InterpretNode in the same meaning
-	context.function.code = append(context.function.code, "ret i32 0")
+	context.function.code = append(context.function.code, "ret i64 0")
 	begin := "; ModuleID = \"wabbit\"\ntarget triple = \"unknown-unknown-unknown\"\ntarget datalayout = \"\"\n\n"
 	return begin + context.function.String() + "\n\n" +
 		strings.Join(context.globals, "\n\n") + "\n\n"
@@ -135,7 +135,7 @@ func BoolToInt(b bool) int {
 func InterpretNode(node model.Node, context *Context) *LValue {
 	switch v := node.(type) {
 	case *model.Integer:
-		//context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", v.Value))
+		//context.function.code = append(context.function.code, fmt.Sprintf("i64.const %v", v.Value))
 		return &LValue{"int", fmt.Sprintf("%v", v.Value), ""} // why Need Stringint
 	case *model.Float:
 		bits := math.Float64bits(v.Value)
@@ -150,7 +150,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 			panic(err)
 		}
 		//context.code = append(context.code, Instruction{"IPUSH", int(rune(unquoted[0]))})
-		//context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", int(rune(unquoted[0]))))
+		//context.function.code = append(context.function.code, fmt.Sprintf("i64.const %v", int(rune(unquoted[0]))))
 		return &LValue{"char", fmt.Sprintf("%v", int(rune(unquoted[0]))), ""}
 	case *model.Name:
 		//func square(x int) int {
@@ -167,7 +167,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 	//	return v.Name
 	// may be not need
 	case *model.NameBool:
-		//context.function.code = append(context.function.code, fmt.Sprintf("i32.const %v", BoolToInt(v.Name == "true")))
+		//context.function.code = append(context.function.code, fmt.Sprintf("i64.const %v", BoolToInt(v.Name == "true")))
 		return &LValue{"bool", fmt.Sprintf("%v", BoolToInt(v.Name == "true")), ""}
 	//case *model.IntegerType:
 	//	return "int"
@@ -182,7 +182,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 		// we should check the type of left and right go we can't make interface + interface
 		if left.WType == "int" && right.WType == "int" {
 			context.function.code = append(context.function.code,
-				fmt.Sprintf("%s = add i32 %s, %s", val, left.LValue, right.LValue))
+				fmt.Sprintf("%s = add i64 %s, %s", val, left.LValue, right.LValue))
 
 		} else if left.WType == "float" && right.WType == "float" {
 			context.function.code = append(context.function.code,
@@ -198,7 +198,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 		// we should check the type of left and right go we can't make interface + interface
 		if left.WType == "int" && right.WType == "int" {
 			context.function.code = append(context.function.code,
-				fmt.Sprintf("%s = mul i32 %s, %s", val, left.LValue, right.LValue))
+				fmt.Sprintf("%s = mul i64 %s, %s", val, left.LValue, right.LValue))
 
 		} else if left.WType == "float" && right.WType == "float" {
 			context.function.code = append(context.function.code,
@@ -214,7 +214,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 		// we should check the type of left and right go we can't make interface + interface
 		if left.WType == "int" && right.WType == "int" {
 			context.function.code = append(context.function.code,
-				fmt.Sprintf("%s = sub i32 %s, %s", val, left.LValue, right.LValue))
+				fmt.Sprintf("%s = sub i64 %s, %s", val, left.LValue, right.LValue))
 
 		} else if left.WType == "float" && right.WType == "float" {
 			context.function.code = append(context.function.code,
@@ -230,7 +230,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 		// we should check the type of left and right go we can't make interface + interface
 		if left.WType == "int" && right.WType == "int" {
 			context.function.code = append(context.function.code,
-				fmt.Sprintf("%s = sdiv i32 %s, %s", val, left.LValue, right.LValue))
+				fmt.Sprintf("%s = sdiv i64 %s, %s", val, left.LValue, right.LValue))
 
 		} else if left.WType == "float" && right.WType == "float" {
 			context.function.code = append(context.function.code,
@@ -245,7 +245,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 		val := context.NewRegister()
 		if right.WType == "int" {
 			context.function.code = append(context.function.code,
-				fmt.Sprintf("%s = sub i32 0, %s", val, right.LValue))
+				fmt.Sprintf("%s = sub i64 0, %s", val, right.LValue))
 
 		} else if right.WType == "float" {
 			context.function.code = append(context.function.code,
@@ -636,7 +636,7 @@ func InterpretNode(node model.Node, context *Context) *LValue {
 				result = context.NewRegister()
 				ltype := _typemap[argVal.WType]
 				context.function.code = append(context.function.code,
-					fmt.Sprintf("%s = fptosi %s %s to i32", result, ltype, argVal.LValue))
+					fmt.Sprintf("%s = fptosi %s %s to i64", result, ltype, argVal.LValue))
 			} else {
 				result = argVal.LValue
 			}

@@ -346,6 +346,9 @@ func (vm *WVM) FSTORE_GLOBAL(value interface{}) interface{} {
 
 func (vm *WVM) CALL(value interface{}) interface{} {
 	label := value.(int)
+	// 这是通过指针链接起来的 frame
+	// 尾递归优化，需要使用当前 vm.frame
+	// 应该是有一个 TAILCALL
 	vm.frame = &Frame{vm.pc, make(map[int]interface{}), vm.frame}
 	vm.pc = vm.labels[label]
 	return nil
@@ -886,6 +889,8 @@ func InterpretNode(node model.Node, context *Context) string {
 		context.NewInstruction(Instruction{"GOTO", val.Slot})
 
 	case *model.ReturnStatement:
+
+		// 需要在这里 v.Value 的解析，你将要立马返回
 		value := InterpretNode(v.Value, context)
 		context.NewInstruction(Instruction{"RETURN", nil})
 		return value
@@ -945,6 +950,7 @@ func InterpretNode(node model.Node, context *Context) string {
 	case *model.FunctionApplication:
 		argType := "int"
 		//value := InterpretNode(v.Func, context) // while lookup
+		//arg 如果有 call 怎么办
 		for _, arg := range v.Arguments {
 			argType = InterpretNode(arg, context) // arg eval in current context
 		}

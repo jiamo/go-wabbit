@@ -1,26 +1,26 @@
 /* 25_tailrecursive.wb
 
-   Recursive Fibonacci numbers */
+   Recursive Fibonacci numbers
+   May be need support factorialTail was declare after factorial
+*/
 
-func factorial(n int) int {
-	return factorialTail(n, 1)
-}
 
 func factorialTail(n int, acc int) int {
 	if n <= 1 {
 		return acc
 	}
-	return factorialTail(n-1, n*acc)
+	return factorialTail(n-1, n+acc)
 }
 
-const LAST = 10; // change 30 to 10
+
+func factorial(n int) int {
+	return factorialTail(n, 1)
+}
 
 func run() int {
-    var n = 0;
-    while n < LAST {
-        print factorial(n);
-        n = n + 1;
-    }
+    var n = 30000;
+    print factorial(n);
+    // no return have bug!!!!
     return 0;
 }
 

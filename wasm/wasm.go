@@ -27,6 +27,7 @@ type Function struct {
 	retType    string
 	code       []string
 	locals     []string
+	maybeTail  bool
 }
 
 func (f *Function) String() string {
@@ -495,6 +496,11 @@ func InterpretNode(node model.Node, context *Context) string {
 
 	case *model.ReturnStatement:
 		value := InterpretNode(v.Value, context)
+		if context.function.maybeTail &&
+			strings.HasPrefix(context.function.code[len(context.function.code)-1], "call") {
+			context.function.code[len(context.function.code)-1] = strings.ReplaceAll(
+				context.function.code[len(context.function.code)-1], "call", "return_call")
+		}
 		context.function.code = append(context.function.code, "return")
 		return value
 
@@ -568,6 +574,17 @@ func InterpretNode(node model.Node, context *Context) string {
 		if name == "bool" {
 			return "bool"
 		}
+		// name is same name
+		// but we need to check if it is tail call
+		// TODO how do we know the next is return.. ?
+		// 一终是之后如果是 return 语句，+ return_call 则不用修改
+		// 如果之后不是 return 预计， 这个 return_call 需要被改成 call
+		context.function.maybeTail = context.function.name == name
+		//if tail {
+		//	context.function.code = append(context.function.code, fmt.Sprintf("return_call $%s", name))
+		//} else {
+		//	context.function.code = append(context.function.code, fmt.Sprintf("call $%s", name))
+		//}
 		context.function.code = append(context.function.code, fmt.Sprintf("call $%s", name))
 		val := context.Lookup(name)
 		return val.Type

@@ -30,8 +30,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to write to out.wat: %v", err)
 	}
-	log.Debugf("node_modules/wabt/bin/wat2wasm")
-	cmd := exec.Command("node_modules/wabt/bin/wat2wasm", "out.wat")
+	//log.Debugf("node_modules/wabt/bin/wat2wasm")
+	cmd := exec.Command("node_modules/wabt/bin/wat2wasm", "--enable-tail-call", "out.wat")
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to run wat2wasm: %v", err)
 	}
@@ -42,7 +42,7 @@ func main() {
 	//	log.Fatalf("Failed to run test.js: %v", err)
 	//}
 	//fmt.Print(string(output))
-	cmd = exec.Command("/Users/jiamo/.nvm/versions/node/v18.14.2/bin/node", "./test.js")
+	cmd = exec.Command("/Users/jiamo/.nvm/versions/node/v18.14.2/bin/node", "--experimental-wasm-return_call", "./test.js")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
