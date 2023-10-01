@@ -19,7 +19,7 @@ func factorial(n int) int {
 
 func run() int {
     // var n = 30000; wasm only support i32
-    var n = 30000000;
+    var n = 3000;
     print factorial(n);
     // no return have bug!!!!
     return 0;

@@ -5,6 +5,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"wabbit-go/parser"
 	"wabbit-go/wasm"
 )
@@ -36,13 +38,13 @@ func main() {
 		log.Fatalf("Failed to run wat2wasm: %v", err)
 	}
 	log.Debugf("node test.js")
-	//cmd = exec.Command("/Users/jiamo/.nvm/versions/node/v18.14.2/bin/node", "./test.js")
-	//output, err := cmd.Output()
-	//if err != nil {
-	//	log.Fatalf("Failed to run test.js: %v", err)
-	//}
-	//fmt.Print(string(output))
-	cmd = exec.Command("/Users/jiamo/.nvm/versions/node/v18.14.2/bin/node", "--experimental-wasm-return_call", "./test.js")
+	usr, err := user.Current()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	nodePath := filepath.Join(usr.HomeDir, ".nvm/versions/node/v18.14.2/bin/node")
+	cmd = exec.Command(nodePath, "--experimental-wasm-return_call", "./test.js")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
